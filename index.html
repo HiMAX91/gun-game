@@ -23,7 +23,6 @@
             color: #fff; font-family: sans-serif;
             pointer-events: none; z-index: 10; min-width: 200px;
         }
-        /* 動態血條 */
         #hp-container {
             width: 100%; height: 8px; background: rgba(255,255,255,0.1);
             border-radius: 4px; margin-top: 15px; overflow: hidden;
@@ -39,6 +38,14 @@
             display: flex; flex-direction: column; justify-content: center; align-items: center;
             background-color: rgba(0,0,0,0.8); color: white; z-index: 20; cursor: pointer;
             font-family: sans-serif;
+        }
+        /* 給手機端使用者的提示 */
+        #mobile-warning {
+            display: none; position: absolute; bottom: 20px; width: 100%; 
+            text-align: center; color: #facc15; font-family: sans-serif; font-size: 14px;
+        }
+        @media (hover: none) and (pointer: coarse) {
+            #mobile-warning { display: block; }
         }
     </style>
     
@@ -65,6 +72,7 @@
     <div id="instructions">
         <h1 style="font-weight: 300;">點擊畫面開始</h1>
         <p style="color: #aaa;">WASD 移動 | 空白鍵 跳躍 | 左鍵 射擊</p>
+        <p id="mobile-warning">⚠️ 系統偵測到觸控設備，目前控制 API 僅支援電腦鍵鼠操作</p>
     </div>
 
     <script type="module">
@@ -101,17 +109,22 @@
         }
 
         // ==========================================
-        // 2. Three.js 場景與物理參數設定
+        // 2. Three.js 場景與變數
         // ==========================================
         let camera, scene, renderer, controls;
         let remotePlayers = {};
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false;
         
+        // 物理與操作變數
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false;
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
         let prevTime = performance.now();
         const raycaster = new THREE.Raycaster();
         let isDead = false;
+
+        // 武器變數
+        let gunGroup;
+        let currentRecoil = 0; // 用於計算後座力動畫
 
         init3D();
         animate();
@@ -127,12 +140,14 @@
             const light = new THREE.HemisphereLight(0xeeeeff, 0x444455, 1);
             scene.add(light);
 
+            // 地板
             const floorGeometry = new THREE.PlaneGeometry(200, 200, 40, 40);
             const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x333333, wireframe: true });
             const floor = new THREE.Mesh(floorGeometry, floorMaterial);
             floor.rotation.x = -Math.PI / 2;
             scene.add(floor);
 
+            // 障礙物
             const boxGeo = new THREE.BoxGeometry(2, 2, 2);
             const boxMat = new THREE.MeshPhongMaterial({ color: 0x555555 });
             for(let i=0; i<10; i++) {
@@ -140,6 +155,32 @@
                 box.position.set((Math.random() - 0.5) * 40, 1, (Math.random() - 0.5) * 40);
                 scene.add(box);
             }
+
+            // ==========================================
+            // 新增：打造第一人稱武器模型
+            // ==========================================
+            gunGroup = new THREE.Group();
+            
+            // 槍身
+            const gunBodyGeo = new THREE.BoxGeometry(0.1, 0.1, 0.4);
+            const gunBodyMat = new THREE.MeshPhongMaterial({ color: 0x222222 });
+            const gunBody = new THREE.Mesh(gunBodyGeo, gunBodyMat);
+            gunGroup.add(gunBody);
+
+            // 槍管
+            const barrelGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.2, 8);
+            const barrelMat = new THREE.MeshPhongMaterial({ color: 0x111111 });
+            const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+            barrel.rotation.x = Math.PI / 2;
+            barrel.position.set(0, 0.02, -0.25);
+            gunGroup.add(barrel);
+
+            // 將武器掛載到攝影機前方右下角
+            gunGroup.position.set(0.2, -0.2, -0.4);
+            camera.add(gunGroup);
+            
+            // 重要：必須將 camera 加入 scene 才能顯示裡面的子物件(槍)
+            scene.add(camera);
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -153,13 +194,14 @@
             controls.addEventListener('unlock', () => instructions.style.display = 'flex');
             scene.add(controls.getObject());
 
+            // 調整：降低跳躍力道 (250 -> 120)
             document.addEventListener('keydown', (e) => {
                 switch (e.code) {
                     case 'KeyW': moveForward = true; break;
                     case 'KeyA': moveLeft = true; break;
                     case 'KeyS': moveBackward = true; break;
                     case 'KeyD': moveRight = true; break;
-                    case 'Space': if (canJump === true && !isDead) velocity.y += 250; canJump = false; break;
+                    case 'Space': if (canJump === true && !isDead) velocity.y += 120; canJump = false; break;
                 }
             });
             document.addEventListener('keyup', (e) => {
@@ -183,10 +225,11 @@
         }
 
         // ==========================================
-        // 3. 射擊邏輯與後座力
+        // 3. 射擊邏輯與武器後座力
         // ==========================================
         function shoot() {
-            camera.rotation.x += 0.02;
+            // 觸發槍身後座力 (賦予數值，由 animate 進行動畫運算)
+            currentRecoil = 0.15;
 
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             let targetMeshes = Object.values(remotePlayers).map(p => p.mesh);
@@ -198,17 +241,15 @@
                 
                 if (hitId && db) {
                     db.ref('players/' + hitId).once('value').then(snap => {
-                        let currentHp = snap.val().hp;
-                        if(currentHp > 0) {
-                            db.ref('players/' + hitId).update({ hp: Math.max(0, currentHp - 25) });
-                        }
+                        let hp = snap.val().hp;
+                        if(hp > 0) db.ref('players/' + hitId).update({ hp: Math.max(0, hp - 25) });
                     });
                 }
             }
         }
 
         // ==========================================
-        // 4. 動畫迴圈與重力物理計算
+        // 4. 動畫與物理計算
         // ==========================================
         function animate() {
             requestAnimationFrame(animate);
@@ -217,17 +258,25 @@
             if (controls.isLocked && !isDead) {
                 const delta = (time - prevTime) / 1000;
                 
+                // 處理武器後座力回正動畫 (Lerp 平滑補間)
+                if (gunGroup) {
+                    currentRecoil = THREE.MathUtils.lerp(currentRecoil, 0, 0.1);
+                    gunGroup.position.z = -0.4 + currentRecoil; // 槍身往後退
+                    gunGroup.rotation.x = currentRecoil * 0.8; // 槍身上揚
+                }
+
+                // 物理阻力
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
-                
-                velocity.y -= 9.8 * 80.0 * delta; 
+                velocity.y -= 9.8 * 60.0 * delta; 
 
                 direction.z = Number(moveForward) - Number(moveBackward);
                 direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
 
-                if (moveForward || moveBackward) velocity.z -= direction.z * 400.0 * delta;
-                if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta;
+                // 調整：降低移動速度 (400 -> 150)
+                if (moveForward || moveBackward) velocity.z -= direction.z * 150.0 * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * 150.0 * delta;
 
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
