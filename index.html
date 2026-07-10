@@ -47,7 +47,7 @@
     <div id="crosshair"></div>
     <div id="ui-panel">
         <h3 style="margin:0 0 10px 0; font-weight: 500;">連線狀態</h3>
-        <div id="statusText">正在連線至 Firebase...</div>
+        <div id="statusText">系統初始化中...</div>
     </div>
     <div id="instructions">
         <h1 style="font-weight: 300;">點擊畫面開始</h1>
@@ -59,29 +59,40 @@
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         // ==========================================
-        // 1. Firebase 初始化與設定
+        // 1. Firebase 初始化與設定 (加入防護機制)
         // ==========================================
         const firebaseConfig = {
             apiKey: "你的_API_KEY",
             authDomain: "你的_PROJECT_ID.firebaseapp.com",
-            databaseURL: "你的_DATABASE_URL", // 確保這裡有填寫即時資料庫網址
+            databaseURL: "你的_DATABASE_URL", 
             projectId: "你的_PROJECT_ID",
             storageBucket: "你的_PROJECT_ID.appspot.com",
             messagingSenderId: "你的_SENDER_ID",
             appId: "你的_APP_ID"
         };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
 
-        // 產生隨機 User ID (取代繁瑣的驗證系統)
-        const myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
-        const myPlayerRef = db.ref('players/' + myUserId);
-        
-        // 斷線時自動從資料庫刪除自己
-        myPlayerRef.onDisconnect().remove();
+        let db = null;
+        let myUserId = null;
+        let myPlayerRef = null;
 
-        // 初始化自身資料
-        myPlayerRef.set({ x: 0, y: 1.6, z: 0, hp: 100 });
+        try {
+            // 檢查是否還是預設字串
+            if (firebaseConfig.apiKey.includes("你的_")) {
+                throw new Error("尚未填寫有效的 Firebase 金鑰。");
+            }
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.database();
+
+            myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
+            myPlayerRef = db.ref('players/' + myUserId);
+            myPlayerRef.onDisconnect().remove();
+            myPlayerRef.set({ x: 0, y: 1.6, z: 0, hp: 100 });
+            
+            document.getElementById('statusText').innerHTML = "正在連線至 Firebase...";
+        } catch (error) {
+            console.warn("⚠️ 啟動離線測試模式：", error.message);
+            document.getElementById('statusText').innerHTML = "<span style='color:#fbd38d;'>離線模式 (3D漫遊)</span>";
+        }
 
         // ==========================================
         // 2. Three.js 場景設定
@@ -166,8 +177,8 @@
                 const hitMesh = intersects[0].object;
                 const hitId = Object.keys(remotePlayers).find(id => remotePlayers[id].mesh === hitMesh);
                 
-                if (hitId) {
-                    // 直接修改 Firebase 上對手的 HP (一槍斃命)
+                if (hitId && db) {
+                    // 有連線時才上傳擊殺數據
                     db.ref('players/' + hitId).update({ hp: 0 });
                 }
             }
@@ -192,8 +203,8 @@
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
 
-                // 上傳最新座標到 Firebase
-                if (velocity.x !== 0 || velocity.z !== 0) {
+                // 有連線時才上傳座標到 Firebase
+                if (db && (velocity.x !== 0 || velocity.z !== 0)) {
                     myPlayerRef.update({
                         x: controls.getObject().position.x,
                         y: controls.getObject().position.y,
@@ -206,59 +217,58 @@
         }
 
         // ==========================================
-        // 4. Firebase 資料庫監聽 (畫出對手與判定生死)
+        // 4. Firebase 資料庫監聽 (確認有連線才執行)
         // ==========================================
-        db.ref('players').on('value', (snapshot) => {
-            const playersData = snapshot.val() || {};
-            let playerCount = Object.keys(playersData).length;
-            
-            document.getElementById('statusText').innerHTML = 
-                playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>準備開火！</span>" : "等待對手...";
-
-            // 檢查自己的生死狀態
-            if (playersData[myUserId] && playersData[myUserId].hp <= 0 && !isDead) {
-                isDead = true;
-                controls.unlock();
-                document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>你被擊殺了...</span>";
-            }
-
-            // 更新或新增敵人
-            Object.keys(playersData).forEach(id => {
-                if (id === myUserId) return; // 略過自己
-
-                const data = playersData[id];
+        if (db) {
+            db.ref('players').on('value', (snapshot) => {
+                const playersData = snapshot.val() || {};
+                let playerCount = Object.keys(playersData).length;
                 
-                if (data.hp <= 0 && remotePlayers[id]) {
-                    // 對手死亡，移除模型
-                    scene.remove(remotePlayers[id].mesh);
-                    delete remotePlayers[id];
-                    document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>勝負已分：你贏了！</span>";
-                    return;
+                document.getElementById('statusText').innerHTML = 
+                    playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>準備開火！</span>" : "等待對手...";
+
+                // 檢查自己的生死狀態
+                if (playersData[myUserId] && playersData[myUserId].hp <= 0 && !isDead) {
+                    isDead = true;
+                    controls.unlock();
+                    document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>你被擊殺了...</span>";
                 }
 
-                if (!remotePlayers[id] && data.hp > 0) {
-                    // 新對手加入，建立紅色方塊
-                    const geo = new THREE.BoxGeometry(1, 2, 1);
-                    const mat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
-                    const mesh = new THREE.Mesh(geo, mat);
-                    scene.add(mesh);
-                    remotePlayers[id] = { mesh: mesh };
-                }
+                // 更新或新增敵人
+                Object.keys(playersData).forEach(id => {
+                    if (id === myUserId) return;
 
-                if (remotePlayers[id] && data.hp > 0) {
-                    // 更新對手位置
-                    remotePlayers[id].mesh.position.set(data.x, data.y, data.z);
-                }
+                    const data = playersData[id];
+                    
+                    if (data.hp <= 0 && remotePlayers[id]) {
+                        scene.remove(remotePlayers[id].mesh);
+                        delete remotePlayers[id];
+                        document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>勝負已分：你贏了！</span>";
+                        return;
+                    }
+
+                    if (!remotePlayers[id] && data.hp > 0) {
+                        const geo = new THREE.BoxGeometry(1, 2, 1);
+                        const mat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
+                        const mesh = new THREE.Mesh(geo, mat);
+                        scene.add(mesh);
+                        remotePlayers[id] = { mesh: mesh };
+                    }
+
+                    if (remotePlayers[id] && data.hp > 0) {
+                        remotePlayers[id].mesh.position.set(data.x, data.y, data.z);
+                    }
+                });
+
+                // 移除已經斷線的敵人
+                Object.keys(remotePlayers).forEach(id => {
+                    if (!playersData[id]) {
+                        scene.remove(remotePlayers[id].mesh);
+                        delete remotePlayers[id];
+                    }
+                });
             });
-
-            // 移除已經斷線的敵人
-            Object.keys(remotePlayers).forEach(id => {
-                if (!playersData[id]) {
-                    scene.remove(remotePlayers[id].mesh);
-                    delete remotePlayers[id];
-                }
-            });
-        });
+        }
     </script>
 </body>
 </html>
