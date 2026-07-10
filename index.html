@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Web 3D FPS</title>
+    <title>Firebase 3D FPS</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
         #crosshair {
@@ -11,24 +11,29 @@
             border-radius: 50%; transform: translate(-50%, -50%);
             box-shadow: 0 0 4px rgba(0,0,0,0.5); pointer-events: none; z-index: 10;
         }
+        /* 極簡液態玻璃 UI：強調高透光與邊緣折射 */
         #ui-panel {
             position: absolute; top: 20px; left: 20px; padding: 20px 30px;
-            background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0));
+            background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0));
+            backdrop-filter: blur(2px) brightness(1.15) contrast(1.1);
             border-top: 1px solid rgba(255,255,255,0.4);
-            border-left: 1px solid rgba(255,255,255,0.4);
+            border-left: 1px solid rgba(255,255,255,0.3);
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
-            backdrop-filter: blur(2px) saturate(150%);
-            border-radius: 16px;
-            color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            border-radius: 12px;
+            color: #fff; font-family: sans-serif;
             pointer-events: none; z-index: 10;
         }
         #instructions {
             position: absolute; width: 100%; height: 100%;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
-            background-color: rgba(0,0,0,0.7); color: white; z-index: 20; cursor: pointer;
+            background-color: rgba(0,0,0,0.8); color: white; z-index: 20; cursor: pointer;
             font-family: sans-serif;
         }
     </style>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
     <script type="importmap">
         {
             "imports": {
@@ -37,24 +42,50 @@
             }
         }
     </script>
-    <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
     <div id="crosshair"></div>
     <div id="ui-panel">
-        <h2 style="margin:0 0 10px 0; font-weight: 500; letter-spacing: 1px;">狀態區</h2>
-        <div id="statusText">等待對手...</div>
+        <h3 style="margin:0 0 10px 0; font-weight: 500;">連線狀態</h3>
+        <div id="statusText">正在連線至 Firebase...</div>
     </div>
     <div id="instructions">
         <h1 style="font-weight: 300;">點擊畫面開始</h1>
-        <p>WASD 移動 | 滑鼠視角 | 左鍵射擊</p>
+        <p style="color: #aaa;">WASD 移動 | 滑鼠視角 | 左鍵射擊</p>
     </div>
 
     <script type="module">
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
-        const socket = io();
+        // ==========================================
+        // 1. Firebase 初始化與設定
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "你的_API_KEY",
+            authDomain: "你的_PROJECT_ID.firebaseapp.com",
+            databaseURL: "你的_DATABASE_URL", // 確保這裡有填寫即時資料庫網址
+            projectId: "你的_PROJECT_ID",
+            storageBucket: "你的_PROJECT_ID.appspot.com",
+            messagingSenderId: "你的_SENDER_ID",
+            appId: "你的_APP_ID"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // 產生隨機 User ID (取代繁瑣的驗證系統)
+        const myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
+        const myPlayerRef = db.ref('players/' + myUserId);
+        
+        // 斷線時自動從資料庫刪除自己
+        myPlayerRef.onDisconnect().remove();
+
+        // 初始化自身資料
+        myPlayerRef.set({ x: 0, y: 1.6, z: 0, hp: 100 });
+
+        // ==========================================
+        // 2. Three.js 場景設定
+        // ==========================================
         let camera, scene, renderer, controls;
         let remotePlayers = {};
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
@@ -62,26 +93,23 @@
         const direction = new THREE.Vector3();
         let prevTime = performance.now();
         const raycaster = new THREE.Raycaster();
+        let isDead = false;
 
-        init();
+        init3D();
         animate();
 
-        function init() {
+        function init3D() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x222222);
-            scene.fog = new THREE.Fog(0x222222, 10, 50);
-
+            scene.background = new THREE.Color(0x1a1a1a);
+            
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.y = 1.6; // 玩家身高
+            camera.position.y = 1.6;
 
-            // 光源
             const light = new THREE.HemisphereLight(0xeeeeff, 0x777788, 1);
-            light.position.set(0.5, 1, 0.75);
             scene.add(light);
 
-            // 地板
-            const floorGeometry = new THREE.PlaneGeometry(100, 100, 10, 10);
-            const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x333333, wireframe: true });
+            const floorGeometry = new THREE.PlaneGeometry(100, 100, 20, 20);
+            const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x444444, wireframe: true });
             const floor = new THREE.Mesh(floorGeometry, floorMaterial);
             floor.rotation.x = -Math.PI / 2;
             scene.add(floor);
@@ -90,15 +118,14 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
-            // 視角控制 (鎖定滑鼠)
             controls = new PointerLockControls(camera, document.body);
             const instructions = document.getElementById('instructions');
-            instructions.addEventListener('click', () => controls.lock());
+            
+            instructions.addEventListener('click', () => { if(!isDead) controls.lock(); });
             controls.addEventListener('lock', () => instructions.style.display = 'none');
             controls.addEventListener('unlock', () => instructions.style.display = 'flex');
             scene.add(controls.getObject());
 
-            // 鍵盤監聽
             document.addEventListener('keydown', (e) => {
                 switch (e.code) {
                     case 'KeyW': moveForward = true; break;
@@ -116,23 +143,33 @@
                 }
             });
 
-            // 射擊監聽
             document.addEventListener('mousedown', (e) => {
-                if (controls.isLocked && e.button === 0) shoot();
+                if (controls.isLocked && e.button === 0 && !isDead) shoot();
             });
 
-            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
         }
 
+        // ==========================================
+        // 3. 核心邏輯：射擊判定與連線同步
+        // ==========================================
         function shoot() {
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-            let targetMeshes = Object.values(remotePlayers).map(p => p.mesh).filter(m => m);
+            let targetMeshes = Object.values(remotePlayers).map(p => p.mesh);
             const intersects = raycaster.intersectObjects(targetMeshes);
 
             if (intersects.length > 0) {
                 const hitMesh = intersects[0].object;
                 const hitId = Object.keys(remotePlayers).find(id => remotePlayers[id].mesh === hitMesh);
-                if (hitId) socket.emit('shootHit', hitId);
+                
+                if (hitId) {
+                    // 直接修改 Firebase 上對手的 HP (一槍斃命)
+                    db.ref('players/' + hitId).update({ hp: 0 });
+                }
             }
         }
 
@@ -140,11 +177,11 @@
             requestAnimationFrame(animate);
             const time = performance.now();
 
-            if (controls.isLocked) {
+            if (controls.isLocked && !isDead) {
                 const delta = (time - prevTime) / 1000;
+                
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
-
                 direction.z = Number(moveForward) - Number(moveBackward);
                 direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
@@ -155,63 +192,73 @@
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
 
-                // 同步位置給伺服器
-                socket.emit('playerMovement', {
-                    x: controls.getObject().position.x,
-                    y: controls.getObject().position.y,
-                    z: controls.getObject().position.z
-                });
+                // 上傳最新座標到 Firebase
+                if (velocity.x !== 0 || velocity.z !== 0) {
+                    myPlayerRef.update({
+                        x: controls.getObject().position.x,
+                        y: controls.getObject().position.y,
+                        z: controls.getObject().position.z
+                    });
+                }
             }
             prevTime = time;
             renderer.render(scene, camera);
         }
 
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
+        // ==========================================
+        // 4. Firebase 資料庫監聽 (畫出對手與判定生死)
+        // ==========================================
+        db.ref('players').on('value', (snapshot) => {
+            const playersData = snapshot.val() || {};
+            let playerCount = Object.keys(playersData).length;
+            
+            document.getElementById('statusText').innerHTML = 
+                playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>準備開火！</span>" : "等待對手...";
 
-        // --- Socket.io 邏輯 ---
-        socket.on('currentPlayers', (players) => {
-            Object.keys(players).forEach(id => {
-                if (id !== socket.id) addOtherPlayer(players[id]);
+            // 檢查自己的生死狀態
+            if (playersData[myUserId] && playersData[myUserId].hp <= 0 && !isDead) {
+                isDead = true;
+                controls.unlock();
+                document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>你被擊殺了...</span>";
+            }
+
+            // 更新或新增敵人
+            Object.keys(playersData).forEach(id => {
+                if (id === myUserId) return; // 略過自己
+
+                const data = playersData[id];
+                
+                if (data.hp <= 0 && remotePlayers[id]) {
+                    // 對手死亡，移除模型
+                    scene.remove(remotePlayers[id].mesh);
+                    delete remotePlayers[id];
+                    document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>勝負已分：你贏了！</span>";
+                    return;
+                }
+
+                if (!remotePlayers[id] && data.hp > 0) {
+                    // 新對手加入，建立紅色方塊
+                    const geo = new THREE.BoxGeometry(1, 2, 1);
+                    const mat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
+                    const mesh = new THREE.Mesh(geo, mat);
+                    scene.add(mesh);
+                    remotePlayers[id] = { mesh: mesh };
+                }
+
+                if (remotePlayers[id] && data.hp > 0) {
+                    // 更新對手位置
+                    remotePlayers[id].mesh.position.set(data.x, data.y, data.z);
+                }
+            });
+
+            // 移除已經斷線的敵人
+            Object.keys(remotePlayers).forEach(id => {
+                if (!playersData[id]) {
+                    scene.remove(remotePlayers[id].mesh);
+                    delete remotePlayers[id];
+                }
             });
         });
-
-        socket.on('newPlayer', (player) => addOtherPlayer(player));
-
-        socket.on('playerMoved', (player) => {
-            if (remotePlayers[player.id] && remotePlayers[player.id].mesh) {
-                remotePlayers[player.id].mesh.position.set(player.x, player.y, player.z);
-            }
-        });
-
-        socket.on('playerDisconnected', (id) => {
-            if (remotePlayers[id]) {
-                scene.remove(remotePlayers[id].mesh);
-                delete remotePlayers[id];
-            }
-        });
-
-        socket.on('victory', (data) => {
-            const status = document.getElementById('statusText');
-            if (data.winner === socket.id) {
-                status.innerHTML = "<span style='color:#4ade80'>你贏了！首殺達成！</span>";
-            } else {
-                status.innerHTML = "<span style='color:#f87171'>你被擊殺了...</span>";
-            }
-            controls.unlock();
-        });
-
-        function addOtherPlayer(playerInfo) {
-            const geometry = new THREE.BoxGeometry(1, 2, 1);
-            const material = new THREE.MeshPhongMaterial({ color: 0xff4444 }); // 敵人是紅色的
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(playerInfo.x, playerInfo.y, playerInfo.z);
-            scene.add(mesh);
-            remotePlayers[playerInfo.id] = { mesh: mesh };
-        }
     </script>
 </body>
 </html>
