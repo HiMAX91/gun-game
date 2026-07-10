@@ -11,29 +11,18 @@
             border-radius: 50%; transform: translate(-50%, -50%);
             box-shadow: 0 0 4px rgba(0,0,0,0.5); pointer-events: none; z-index: 10;
         }
-        /* 極簡液態玻璃 UI */
+        /* 極簡液態玻璃 UI：強調高透光與邊緣折射 */
         #ui-panel {
             position: absolute; top: 20px; left: 20px; padding: 20px 30px;
             background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0));
-            backdrop-filter: blur(2px) brightness(1.15) contrast(1.1);
+            backdrop-filter: brightness(1.15) contrast(1.1);
             border-top: 1px solid rgba(255,255,255,0.4);
             border-left: 1px solid rgba(255,255,255,0.3);
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
             border-radius: 12px;
             color: #fff; font-family: sans-serif;
-            pointer-events: none; z-index: 10; min-width: 200px;
+            pointer-events: none; z-index: 10;
         }
-        /* 新增：動態血條 */
-        #hp-container {
-            width: 100%; height: 8px; background: rgba(255,255,255,0.1);
-            border-radius: 4px; margin-top: 15px; overflow: hidden;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
-        }
-        #hp-bar {
-            width: 100%; height: 100%; background: #4ade80;
-            transition: width 0.3s ease, background-color 0.3s ease;
-        }
-        
         #instructions {
             position: absolute; width: 100%; height: 100%;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
@@ -57,14 +46,12 @@
 <body>
     <div id="crosshair"></div>
     <div id="ui-panel">
-        <h3 style="margin:0 0 10px 0; font-weight: 500; font-size: 16px;">連線狀態</h3>
-        <div id="statusText" style="font-size: 14px; margin-bottom: 10px;">系統初始化中...</div>
-        <div style="font-size: 12px; color: #ccc;">生命值 (HP)</div>
-        <div id="hp-container"><div id="hp-bar"></div></div>
+        <h3 style="margin:0 0 10px 0; font-weight: 500;">連線狀態</h3>
+        <div id="statusText">正在連線至 Firebase...</div>
     </div>
     <div id="instructions">
         <h1 style="font-weight: 300;">點擊畫面開始</h1>
-        <p style="color: #aaa;">WASD 移動 | 空白鍵 跳躍 | 左鍵 射擊</p>
+        <p style="color: #aaa;">WASD 移動 | 滑鼠視角 | 左鍵射擊</p>
     </div>
 
     <script type="module">
@@ -72,7 +59,7 @@
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         // ==========================================
-        // 1. Firebase 初始化
+        // 1. Firebase 初始化與設定
         // ==========================================
         const firebaseConfig = {
             apiKey: "你的_API_KEY",
@@ -83,30 +70,22 @@
             messagingSenderId: "你的_SENDER_ID",
             appId: "你的_APP_ID"
         };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
 
-        let db = null, myUserId = null, myPlayerRef = null;
-
-        try {
-            if (firebaseConfig.apiKey.includes("你的_")) throw new Error("尚未填寫有效的 Firebase 金鑰。");
-            firebase.initializeApp(firebaseConfig);
-            db = firebase.database();
-            myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
-            myPlayerRef = db.ref('players/' + myUserId);
-            myPlayerRef.onDisconnect().remove();
-            myPlayerRef.set({ x: 0, y: 1.6, z: 0, hp: 100 });
-            document.getElementById('statusText').innerHTML = "連線成功";
-        } catch (error) {
-            console.warn("⚠️ 啟動離線測試模式");
-            document.getElementById('statusText').innerHTML = "<span style='color:#fbd38d;'>離線測試模式</span>";
-        }
+        // 產生隨機 User ID 作為連線身分
+        const myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
+        const myPlayerRef = db.ref('players/' + myUserId);
+        
+        myPlayerRef.onDisconnect().remove();
+        myPlayerRef.set({ x: 0, y: 1.6, z: 0, hp: 100 });
 
         // ==========================================
-        // 2. Three.js 場景與物理參數設定
+        // 2. Three.js 場景設定
         // ==========================================
         let camera, scene, renderer, controls;
         let remotePlayers = {};
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false;
-        
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
         let prevTime = performance.now();
@@ -118,30 +97,39 @@
 
         function init3D() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x111111);
-            scene.fog = new THREE.Fog(0x111111, 0, 50); // 加入淡淡的霧氣增加空間感
+            scene.background = new THREE.Color(0x1a1a1a);
             
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.y = 1.6;
 
-            const light = new THREE.HemisphereLight(0xeeeeff, 0x444455, 1);
+            // --- 新增：液態玻璃質感的槍枝 ---
+            const gunGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5);
+            const gunMaterial = new THREE.MeshPhysicalMaterial({
+                transmission: 1.0,  // 極致透光
+                roughness: 0.02,    // 表面極度光滑
+                ior: 1.5,           // 光線折射率
+                thickness: 0.5,
+                color: 0xeeeeee,
+                transparent: true
+            });
+            const gun = new THREE.Mesh(gunGeometry, gunMaterial);
+            
+            // 將槍固定在畫面右下方
+            gun.position.set(0.2, -0.2, -0.4);
+            
+            // 綁定到相機上，並將相機加入場景
+            camera.add(gun);
+            scene.add(camera);
+            // -----------------------------
+
+            const light = new THREE.HemisphereLight(0xeeeeff, 0x777788, 1);
             scene.add(light);
 
-            // 地板稍微調暗，加上網格
-            const floorGeometry = new THREE.PlaneGeometry(200, 200, 40, 40);
-            const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x333333, wireframe: true });
+            const floorGeometry = new THREE.PlaneGeometry(100, 100, 20, 20);
+            const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x444444, wireframe: true });
             const floor = new THREE.Mesh(floorGeometry, floorMaterial);
             floor.rotation.x = -Math.PI / 2;
             scene.add(floor);
-
-            // 隨機生成幾個障礙物當掩體
-            const boxGeo = new THREE.BoxGeometry(2, 2, 2);
-            const boxMat = new THREE.MeshPhongMaterial({ color: 0x555555 });
-            for(let i=0; i<10; i++) {
-                let box = new THREE.Mesh(boxGeo, boxMat);
-                box.position.set((Math.random() - 0.5) * 40, 1, (Math.random() - 0.5) * 40);
-                scene.add(box);
-            }
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -155,14 +143,12 @@
             controls.addEventListener('unlock', () => instructions.style.display = 'flex');
             scene.add(controls.getObject());
 
-            // 新增空白鍵跳躍監聽
             document.addEventListener('keydown', (e) => {
                 switch (e.code) {
                     case 'KeyW': moveForward = true; break;
                     case 'KeyA': moveLeft = true; break;
                     case 'KeyS': moveBackward = true; break;
                     case 'KeyD': moveRight = true; break;
-                    case 'Space': if (canJump === true && !isDead) velocity.y += 250; canJump = false; break;
                 }
             });
             document.addEventListener('keyup', (e) => {
@@ -186,12 +172,9 @@
         }
 
         // ==========================================
-        // 3. 射擊邏輯與後座力
+        // 3. 核心邏輯：射擊判定與連線同步
         // ==========================================
         function shoot() {
-            // 簡單後座力：開槍時鏡頭微微上揚
-            camera.rotation.x += 0.02;
-
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             let targetMeshes = Object.values(remotePlayers).map(p => p.mesh);
             const intersects = raycaster.intersectObjects(targetMeshes);
@@ -200,21 +183,12 @@
                 const hitMesh = intersects[0].object;
                 const hitId = Object.keys(remotePlayers).find(id => remotePlayers[id].mesh === hitMesh);
                 
-                // 扣 25 滴血，而不是一槍斃命
-                if (hitId && db) {
-                    db.ref('players/' + hitId).once('value').then(snap => {
-                        let currentHp = snap.val().hp;
-                        if(currentHp > 0) {
-                            db.ref('players/' + hitId).update({ hp: Math.max(0, currentHp - 25) });
-                        }
-                    });
+                if (hitId) {
+                    db.ref('players/' + hitId).update({ hp: 0 });
                 }
             }
         }
 
-        // ==========================================
-        // 4. 動畫迴圈與重力物理計算
-        // ==========================================
         function animate() {
             requestAnimationFrame(animate);
             const time = performance.now();
@@ -222,13 +196,8 @@
             if (controls.isLocked && !isDead) {
                 const delta = (time - prevTime) / 1000;
                 
-                // 阻力與摩擦力
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
-                
-                // 新增重力：每秒向下加速 (模擬重力加速度)
-                velocity.y -= 9.8 * 80.0 * delta; 
-
                 direction.z = Number(moveForward) - Number(moveBackward);
                 direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
@@ -238,19 +207,8 @@
 
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
-                
-                // 應用 Y 軸速度 (跳躍與下墜)
-                controls.getObject().position.y += (velocity.y * delta);
 
-                // 地板碰撞偵測 (確保不會掉到地板下)
-                if (controls.getObject().position.y < 1.6) {
-                    velocity.y = 0;
-                    controls.getObject().position.y = 1.6;
-                    canJump = true; // 碰到地板才能再次跳躍
-                }
-
-                // 有連線時才上傳座標到 Firebase
-                if (db && (Math.abs(velocity.x) > 0.1 || Math.abs(velocity.z) > 0.1 || Math.abs(velocity.y) > 0.1)) {
+                if (velocity.x !== 0 || velocity.z !== 0) {
                     myPlayerRef.update({
                         x: controls.getObject().position.x,
                         y: controls.getObject().position.y,
@@ -263,73 +221,53 @@
         }
 
         // ==========================================
-        // 5. Firebase 資料庫監聽與 UI 更新
+        // 4. Firebase 資料庫監聽 (畫出對手與判定生死)
         // ==========================================
-        function updateUI(hp) {
-            const hpBar = document.getElementById('hp-bar');
-            hpBar.style.width = hp + '%';
-            if (hp > 50) hpBar.style.background = '#4ade80'; // 綠色
-            else if (hp > 25) hpBar.style.background = '#facc15'; // 黃色
-            else hpBar.style.background = '#f87171'; // 紅色
-        }
+        db.ref('players').on('value', (snapshot) => {
+            const playersData = snapshot.val() || {};
+            let playerCount = Object.keys(playersData).length;
+            
+            document.getElementById('statusText').innerHTML = 
+                playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>準備開火！</span>" : "等待對手...";
 
-        if (db) {
-            db.ref('players').on('value', (snapshot) => {
-                const playersData = snapshot.val() || {};
-                let playerCount = Object.keys(playersData).length;
+            if (playersData[myUserId] && playersData[myUserId].hp <= 0 && !isDead) {
+                isDead = true;
+                controls.unlock();
+                document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>你被擊殺了...</span>";
+            }
+
+            Object.keys(playersData).forEach(id => {
+                if (id === myUserId) return;
+
+                const data = playersData[id];
                 
-                if(!isDead) {
-                    document.getElementById('statusText').innerHTML = 
-                        playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>戰鬥開始</span>" : "等待對手加入...";
+                if (data.hp <= 0 && remotePlayers[id]) {
+                    scene.remove(remotePlayers[id].mesh);
+                    delete remotePlayers[id];
+                    document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>勝負已分：你贏了！</span>";
+                    return;
                 }
 
-                // 更新自己的血量 UI
-                if (playersData[myUserId]) {
-                    let myHp = playersData[myUserId].hp;
-                    updateUI(myHp);
-                    
-                    if (myHp <= 0 && !isDead) {
-                        isDead = true;
-                        controls.unlock();
-                        document.getElementById('statusText').innerHTML = "<span style='color:#f87171; font-weight:bold;'>你被擊殺了！</span>";
-                        document.getElementById('instructions').innerHTML = "<h1 style='color:#f87171'>YOU DIED</h1><p>請重新整理網頁復活</p>";
-                    }
+                if (!remotePlayers[id] && data.hp > 0) {
+                    const geo = new THREE.BoxGeometry(1, 2, 1);
+                    const mat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
+                    const mesh = new THREE.Mesh(geo, mat);
+                    scene.add(mesh);
+                    remotePlayers[id] = { mesh: mesh };
                 }
 
-                // 更新敵人模型
-                Object.keys(playersData).forEach(id => {
-                    if (id === myUserId) return;
-                    const data = playersData[id];
-                    
-                    // 敵人死亡
-                    if (data.hp <= 0 && remotePlayers[id]) {
-                        scene.remove(remotePlayers[id].mesh);
-                        delete remotePlayers[id];
-                        if(!isDead) document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>擊殺敵人！</span>";
-                        return;
-                    }
-
-                    // 敵人生存與移動
-                    if (data.hp > 0) {
-                        if (!remotePlayers[id]) {
-                            const geo = new THREE.BoxGeometry(1, 2, 1);
-                            const mat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
-                            const mesh = new THREE.Mesh(geo, mat);
-                            scene.add(mesh);
-                            remotePlayers[id] = { mesh: mesh };
-                        }
-                        remotePlayers[id].mesh.position.set(data.x, data.y, data.z);
-                    }
-                });
-
-                Object.keys(remotePlayers).forEach(id => {
-                    if (!playersData[id]) {
-                        scene.remove(remotePlayers[id].mesh);
-                        delete remotePlayers[id];
-                    }
-                });
+                if (remotePlayers[id] && data.hp > 0) {
+                    remotePlayers[id].mesh.position.set(data.x, data.y, data.z);
+                }
             });
-        }
+
+            Object.keys(remotePlayers).forEach(id => {
+                if (!playersData[id]) {
+                    scene.remove(remotePlayers[id].mesh);
+                    delete remotePlayers[id];
+                }
+            });
+        });
     </script>
 </body>
 </html>
