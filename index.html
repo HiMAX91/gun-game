@@ -77,7 +77,7 @@
         }
         .cd-ring.ready { background: conic-gradient(rgba(74,222,128,0.9) 360deg, rgba(74,222,128,0.9) 360deg); }
 
-
+    </style>
     
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
@@ -211,9 +211,14 @@
         const DASH_COOLDOWN = 3000;
         const GRENADE_COOLDOWN = 5000;
 
-        init3D();
-        setupMobileControls();
-        animate();
+        try {
+            init3D();
+            setupMobileControls();
+            animate();
+        } catch (err) {
+            console.error('Init error:', err);
+            document.body.innerHTML = '<div style="color:#f87171; background:#000; padding:40px; font-family:sans-serif; font-size:18px;">初始化錯誤：' + err.message + '<br><br>' + (err.stack || '').replace(/\n/g, '<br>') + '</div>';
+        }
 
         function init3D() {
             scene = new THREE.Scene();
@@ -647,6 +652,20 @@
 
         function animate() {
             requestAnimationFrame(animate);
+            try {
+                _animateInner();
+            } catch (err) {
+                console.error('Animate loop error:', err);
+                let statusEl = document.getElementById('statusText');
+                if (statusEl) {
+                    statusEl.innerHTML = "<span style='color:#f87171;'>錯誤: " + err.message + "</span>";
+                }
+                let uiPanel = document.getElementById('ui-panel');
+                if (uiPanel) uiPanel.style.display = 'block';
+            }
+        }
+
+        function _animateInner() {
             const time = performance.now();
             const delta = (time - prevTime) / 1000;
             updateMobileCooldownRings();
