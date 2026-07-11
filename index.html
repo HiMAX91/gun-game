@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Firebase 3D FPS - 特戰英豪手感版</title>
+    <title>Firebase 3D FPS - 空氣牆與手感修正版</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
         
@@ -51,6 +51,7 @@
         }
         .key-hint { color: #4ade80; font-weight: bold; padding: 0 5px; }
         .skill-hint { color: #00aaff; font-weight: bold; padding: 0 5px; }
+        .explosive-hint { color: #f87171; font-weight: bold; padding: 0 5px; }
     </style>
     
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -82,15 +83,20 @@
             武器：<span id="weaponText" style="color: #fff; font-weight: bold;">突擊步槍</span>
         </div>
         <div style="margin-top: 5px; font-size: 12px; color: #ccc;">
-            瞬風 (Dash)：<span id="dashText" style="color: #00aaff; font-weight: bold;">就緒</span>
+            瞬風 (E)：<span id="dashText" style="color: #00aaff; font-weight: bold;">就緒</span>
+        </div>
+        <div style="margin-top: 5px; font-size: 12px; color: #ccc;">
+            手榴彈 (G)：<span id="grenadeText" style="color: #f87171; font-weight: bold;">就緒</span>
         </div>
     </div>
     
     <div id="instructions">
         <h1 style="font-weight: 300; letter-spacing: 2px;">點擊畫面開始</h1>
-        <p style="color: #bbb; margin-top: 20px;">
-            WASD 移動 | 空白鍵 跳躍 | 左鍵 射擊<br><br>
-            按 <span class="key-hint">1</span> 步槍 | 按 <span class="key-hint">2</span> 戰術刀 | 按 <span class="skill-hint">E</span> 瞬風衝刺
+        <p style="color: #bbb; margin-top: 20px; line-height: 1.8;">
+            <span class="key-hint">WASD</span> 移動 | <span class="key-hint">空白鍵</span> 跳躍<br>
+            <span class="key-hint">左鍵</span> 射擊 | <span class="key-hint">右鍵</span> 開鏡瞄準<br>
+            按 <span class="key-hint">1</span> 步槍 | 按 <span class="key-hint">2</span> 戰術刀<br>
+            按 <span class="skill-hint">E</span> 瞬風衝刺 | 按 <span class="explosive-hint">G</span> 投擲手榴彈
         </p>
     </div>
 
@@ -139,17 +145,22 @@
         const raycaster = new THREE.Raycaster();
         let isDead = false;
 
-        // 技能與動畫變數
+        // 武器與機制變數
         let weaponContainer = new THREE.Group();
         let gunGroup, knifeGroup;
         let currentWeapon = 'gun'; 
         let currentRecoil = 0; 
         let isSwinging = false;
         let swingProgress = 0;
+        let isAiming = false; 
         
-        // 特戰機制變數
-        let crosshairSpread = 0; // 準星擴散度
-        let lastDashTime = 0;    // 衝刺冷卻
+        let crosshairSpread = 0; 
+        let lastDashTime = 0;    
+        let lastGrenadeTime = 0;
+
+        // 爆破系統陣列
+        let grenades = [];
+        let particles = [];
 
         init3D();
         animate();
@@ -170,6 +181,7 @@
             dirLight.position.set(10, 20, 10);
             scene.add(dirLight);
 
+            // 地板大小為 200x200
             const floorGeometry = new THREE.PlaneGeometry(200, 200, 40, 40);
             const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8, metalness: 0.2 });
             const floor = new THREE.Mesh(floorGeometry, floorMaterial);
@@ -180,11 +192,12 @@
             const boxMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.7 });
             for(let i=0; i<15; i++) {
                 let box = new THREE.Mesh(boxGeo, boxMat);
-                box.position.set((Math.random() - 0.5) * 60, 1, (Math.random() - 0.5) * 60);
+                // 障礙物也控制在邊界內
+                box.position.set((Math.random() - 0.5) * 180, 1, (Math.random() - 0.5) * 180);
                 scene.add(box);
             }
 
-            // 武器模型建立
+            // 武器模型
             gunGroup = new THREE.Group();
             const gunBodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.7, roughness: 0.4 });
             const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.45), gunBodyMat);
@@ -232,8 +245,13 @@
             
             instructions.addEventListener('click', () => { if(!isDead) controls.lock(); });
             controls.addEventListener('lock', () => instructions.style.display = 'none');
-            controls.addEventListener('unlock', () => instructions.style.display = 'flex');
+            controls.addEventListener('unlock', () => {
+                instructions.style.display = 'flex';
+                isAiming = false; 
+            });
             scene.add(controls.getObject());
+
+            document.addEventListener('contextmenu', e => e.preventDefault());
 
             document.addEventListener('keydown', (e) => {
                 switch (e.code) {
@@ -244,11 +262,11 @@
                     case 'Space': if (canJump === true && !isDead) velocity.y += 120; canJump = false; break;
                     case 'Digit1': switchWeapon('gun'); break;
                     case 'Digit2': switchWeapon('knife'); break;
-                    // 【捷風瞬風技能】
                     case 'KeyE': 
-                        if (performance.now() - lastDashTime > 3000 && !isDead) {
-                            dash(); 
-                        }
+                        if (performance.now() - lastDashTime > 3000 && !isDead) dash(); 
+                        break;
+                    case 'KeyG': 
+                        if (performance.now() - lastGrenadeTime > 5000 && !isDead) throwGrenade(); 
                         break;
                 }
             });
@@ -262,7 +280,12 @@
             });
 
             document.addEventListener('mousedown', (e) => {
-                if (controls.isLocked && e.button === 0 && !isDead) attack();
+                if (!controls.isLocked || isDead) return;
+                if (e.button === 0) attack();
+                if (e.button === 2 && currentWeapon === 'gun') isAiming = true;
+            });
+            document.addEventListener('mouseup', (e) => {
+                if (e.button === 2) isAiming = false;
             });
 
             window.addEventListener('resize', () => {
@@ -272,8 +295,12 @@
             });
         }
 
+        // ==========================================
+        // 3. 武器、技能與爆破系統
+        // ==========================================
         function switchWeapon(type) {
             currentWeapon = type;
+            isAiming = false; 
             if (type === 'gun') {
                 gunGroup.visible = true; knifeGroup.visible = false;
                 document.getElementById('weaponText').innerText = "突擊步槍";
@@ -291,33 +318,88 @@
             direction.z = Number(moveForward) - Number(moveBackward);
             direction.x = Number(moveRight) - Number(moveLeft);
             direction.normalize();
-            
-            // 如果原地按 E，預設往前衝
             if (direction.x === 0 && direction.z === 0) direction.z = 1;
             
-            // 瞬間給予極大速度
-            velocity.x -= direction.x * 2000.0;
-            velocity.z -= direction.z * 2000.0;
+            // 修正速度：從 2000 降到 600，恢復合理的手感
+            velocity.x -= direction.x * 600.0;
+            velocity.z -= direction.z * 600.0;
             
             lastDashTime = performance.now();
             document.getElementById('dashText').innerHTML = "<span style='color:#facc15;'>冷卻中...</span>";
-            
             setTimeout(() => {
                 document.getElementById('dashText').innerHTML = "<span style='color:#00aaff; font-weight:bold;'>就緒</span>";
             }, 3000);
         }
 
-        // ==========================================
-        // 3. 攻擊與急停隨機彈道
-        // ==========================================
+        function throwGrenade() {
+            const geo = new THREE.CylinderGeometry(0.05, 0.05, 0.15, 8);
+            const mat = new THREE.MeshStandardMaterial({ color: 0x115511, metalness: 0.5 });
+            const grenadeMesh = new THREE.Mesh(geo, mat);
+            
+            grenadeMesh.position.copy(camera.position);
+            scene.add(grenadeMesh);
+
+            let throwVel = new THREE.Vector3();
+            camera.getWorldDirection(throwVel);
+            throwVel.multiplyScalar(20); 
+            throwVel.y += 8; 
+
+            grenades.push({
+                mesh: grenadeMesh,
+                vel: throwVel,
+                timer: 2.0 
+            });
+
+            lastGrenadeTime = performance.now();
+            document.getElementById('grenadeText').innerHTML = "<span style='color:#facc15;'>冷卻中...</span>";
+            setTimeout(() => {
+                document.getElementById('grenadeText').innerHTML = "<span style='color:#f87171; font-weight:bold;'>就緒</span>";
+            }, 5000);
+        }
+
+        function triggerExplosion(position) {
+            const particleMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+            for(let i=0; i<40; i++) {
+                const pMesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), particleMat);
+                pMesh.position.copy(position);
+                const pVel = new THREE.Vector3(
+                    (Math.random() - 0.5) * 30,
+                    (Math.random() - 0.5) * 30,
+                    (Math.random() - 0.5) * 30
+                );
+                scene.add(pMesh);
+                particles.push({ mesh: pMesh, vel: pVel, life: 1.0 });
+            }
+
+            if (db && !isDead) {
+                let distToMe = camera.position.distanceTo(position);
+                if (distToMe < 8) {
+                    let damage = Math.floor((8 - distToMe) * 15); 
+                    db.ref('players/' + myUserId).once('value').then(snap => {
+                        let hp = snap.val().hp;
+                        if(hp > 0) db.ref('players/' + myUserId).update({ hp: Math.max(0, hp - damage) });
+                    });
+                }
+
+                Object.keys(remotePlayers).forEach(id => {
+                    let distToEnemy = remotePlayers[id].mesh.position.distanceTo(position);
+                    if (distToEnemy < 8) {
+                        let damage = Math.floor((8 - distToEnemy) * 15);
+                        db.ref('players/' + id).once('value').then(snap => {
+                            let hp = snap.val().hp;
+                            if(hp > 0) db.ref('players/' + id).update({ hp: Math.max(0, hp - damage) });
+                        });
+                    }
+                });
+            }
+        }
+
         function attack() {
             if (currentWeapon === 'gun') {
-                currentRecoil = 0.15;
-                // 開槍也會造成準星擴散
-                crosshairSpread += 15; 
+                currentRecoil = isAiming ? 0.05 : 0.15; 
+                crosshairSpread += isAiming ? 5 : 15; 
                 
-                // 【彈道隨機偏移】：走動或跳躍時，子彈會亂飄
-                let currentError = (crosshairSpread / 100) * 0.1;
+                let currentError = (crosshairSpread / 100) * (isAiming ? 0.02 : 0.1);
                 let randomX = (Math.random() - 0.5) * currentError;
                 let randomY = (Math.random() - 0.5) * currentError;
                 
@@ -330,7 +412,6 @@
                 if(isSwinging) return; 
                 isSwinging = true;
                 swingProgress = 0;
-                
                 raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
                 raycaster.far = 4; 
                 checkHit(50); 
@@ -353,32 +434,39 @@
         }
 
         // ==========================================
-        // 4. 動畫、物理與 UI 更新
+        // 4. 動畫與物理計算
         // ==========================================
         function updateCrosshair(speed) {
-            // 基礎擴散度 + 速度造成的擴散
             let targetSpread = (speed / 10) + (canJump ? 0 : 20); 
-            
-            // 讓擴散度平滑過渡
+            if (isAiming) targetSpread *= 0.2; 
             crosshairSpread = THREE.MathUtils.lerp(crosshairSpread, targetSpread, 0.1);
-            
-            // 最大擴散限制
             if(crosshairSpread > 40) crosshairSpread = 40;
             
-            document.getElementById('ch-top').style.transform = `translateY(${-8 - crosshairSpread}px)`;
-            document.getElementById('ch-bottom').style.transform = `translateY(${8 + crosshairSpread}px)`;
-            document.getElementById('ch-left').style.transform = `translateX(${-8 - crosshairSpread}px)`;
-            document.getElementById('ch-right').style.transform = `translateX(${8 + crosshairSpread}px)`;
+            let displaySpread = isAiming ? -15 : crosshairSpread;
+            
+            document.getElementById('ch-top').style.transform = `translateY(${-8 - displaySpread}px)`;
+            document.getElementById('ch-bottom').style.transform = `translateY(${8 + displaySpread}px)`;
+            document.getElementById('ch-left').style.transform = `translateX(${-8 - displaySpread}px)`;
+            document.getElementById('ch-right').style.transform = `translateX(${8 + displaySpread}px)`;
         }
 
         function animate() {
             requestAnimationFrame(animate);
             const time = performance.now();
+            const delta = (time - prevTime) / 1000;
 
             if (controls.isLocked && !isDead) {
-                const delta = (time - prevTime) / 1000;
-                
+                let targetFov = isAiming ? 45 : 75; 
+                camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.15);
+                camera.updateProjectionMatrix();
+
                 if (currentWeapon === 'gun') {
+                    let targetX = isAiming ? 0 : 0.25;
+                    let targetY = isAiming ? -0.16 : -0.25;
+                    
+                    weaponContainer.position.x = THREE.MathUtils.lerp(weaponContainer.position.x, targetX, 0.2);
+                    weaponContainer.position.y = THREE.MathUtils.lerp(weaponContainer.position.y, targetY, 0.2);
+                    
                     currentRecoil = THREE.MathUtils.lerp(currentRecoil, 0, 0.15);
                     weaponContainer.position.z = -0.4 + currentRecoil; 
                     weaponContainer.rotation.x = currentRecoil * 0.8; 
@@ -404,20 +492,32 @@
                 direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
 
-                if (moveForward || moveBackward) velocity.z -= direction.z * 150.0 * delta;
-                if (moveLeft || moveRight) velocity.x -= direction.x * 150.0 * delta;
+                let speedMult = isAiming ? 70.0 : 150.0;
+                if (moveForward || moveBackward) velocity.z -= direction.z * speedMult * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * speedMult * delta;
 
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
                 controls.getObject().position.y += (velocity.y * delta);
 
-                if (controls.getObject().position.y < 1.6) {
+                // ==========================================
+                // 【新增機制】：空氣牆限制 (防止掉出邊界)
+                // ==========================================
+                let pos = controls.getObject().position;
+                const mapBoundary = 95; // 地板大小是一半 100，我們設定 95 為極限邊界
+                
+                if (pos.x > mapBoundary) pos.x = mapBoundary;
+                if (pos.x < -mapBoundary) pos.x = -mapBoundary;
+                if (pos.z > mapBoundary) pos.z = mapBoundary;
+                if (pos.z < -mapBoundary) pos.z = -mapBoundary;
+
+                // 地板碰撞 (跳躍落下)
+                if (pos.y < 1.6) {
                     velocity.y = 0;
-                    controls.getObject().position.y = 1.6;
+                    pos.y = 1.6;
                     canJump = true; 
                 }
 
-                // 計算當前真實速度，用於更新十字準星
                 let currentSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
                 updateCrosshair(currentSpeed);
 
@@ -429,6 +529,49 @@
                     });
                 }
             }
+
+            for (let i = grenades.length - 1; i >= 0; i--) {
+                let g = grenades[i];
+                g.timer -= delta;
+                
+                if (g.timer <= 0) {
+                    triggerExplosion(g.mesh.position);
+                    scene.remove(g.mesh);
+                    grenades.splice(i, 1);
+                    continue;
+                }
+
+                g.vel.y -= 9.8 * 3 * delta;
+                g.vel.x -= g.vel.x * 0.5 * delta;
+                g.vel.z -= g.vel.z * 0.5 * delta;
+
+                g.mesh.position.addScaledVector(g.vel, delta);
+                g.mesh.rotation.x += g.vel.z * delta;
+                g.mesh.rotation.z -= g.vel.x * delta;
+
+                if (g.mesh.position.y < 0.1) {
+                    g.mesh.position.y = 0.1;
+                    g.vel.y *= -0.5; 
+                    g.vel.x *= 0.8; 
+                    g.vel.z *= 0.8;
+                }
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.life -= delta * 1.5; 
+                
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    particles.splice(i, 1);
+                    continue;
+                }
+                
+                p.mesh.position.addScaledVector(p.vel, delta);
+                p.mesh.scale.setScalar(p.life); 
+                p.mesh.material.color.setHex(p.life > 0.5 ? 0xffaa00 : 0xff3300); 
+            }
+
             prevTime = time;
             renderer.render(scene, camera);
         }
