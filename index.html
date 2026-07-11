@@ -450,13 +450,21 @@
                 if (dx === 0 && dz === 0) dz = 1;
             }
             
-            // 將輸入向量轉為世界座標系
-            let moveVec = new THREE.Vector3(dx, 0, dz);
-            moveVec.applyEuler(new THREE.Euler(0, camera.rotation.y, 0, 'YXZ'));
+            // 【修正】改用相機世界朝向計算，跟主移動邏輯保持一致，避免 camera.rotation.y 不可靠的問題
+            let camForward = new THREE.Vector3();
+            camera.getWorldDirection(camForward);
+            camForward.y = 0;
+            camForward.normalize();
+            let camRight = new THREE.Vector3();
+            camRight.crossVectors(camForward, camera.up).normalize();
+
+            let moveVec = new THREE.Vector3();
+            moveVec.addScaledVector(camForward, -dz);
+            moveVec.addScaledVector(camRight, dx);
+            if (moveVec.lengthSq() > 0) moveVec.normalize();
             
-            // 【修正】velocity 現在全程是純世界座標，這裡直接疊加轉換後的世界方向即可
-            velocity.x += moveVec.x * 600.0;
-            velocity.z += moveVec.z * 600.0;
+            velocity.x -= moveVec.x * 600.0;
+            velocity.z -= moveVec.z * 600.0;
             
             lastDashTime = performance.now();
             document.getElementById('dashText').innerHTML = "<span style='color:#facc15;'>冷卻中...</span>";
@@ -607,16 +615,29 @@
                 }
 
                 // ==========================================
-                // 【核心修正 1】：先把「相對鏡頭」的輸入方向轉成世界座標方向，
-                // 再套用到 velocity。轉向只在這裡做一次，
-                // 之後 velocity 全程代表世界座標速度，不會因為轉頭而被重新解釋、產生漂移。
+                // 【核心修正 1】：用相機「世界朝向向量」算移動方向，
+                // 不要用 camera.rotation.y —— 在 PointerLockControls 底下，
+                // 左右轉其實是外層 controls.getObject() 在轉，camera 本身只管上下看，
+                // 導致 camera.rotation.y 在某些角度下不準確（甚至跳變），
+                // 這正是 W 有時候變成走向側邊或後面的原因。
                 // ==========================================
-                let inputVec = new THREE.Vector3(dx, 0, dz);
-                inputVec.applyEuler(new THREE.Euler(0, camera.rotation.y, 0, 'YXZ'));
+                let camForward = new THREE.Vector3();
+                camera.getWorldDirection(camForward);
+                camForward.y = 0;
+                camForward.normalize();
+                let camRight = new THREE.Vector3();
+                camRight.crossVectors(camForward, camera.up).normalize();
+
+                // dz>0 代表按 S（後退），dx>0 代表按 D（右）
+                // 這裡用世界朝向組合出實際移動向量
+                let inputVec = new THREE.Vector3();
+                inputVec.addScaledVector(camForward, -dz);
+                inputVec.addScaledVector(camRight, dx);
+                if (inputVec.lengthSq() > 0) inputVec.normalize().multiplyScalar(Math.min(1, Math.hypot(dx, dz)));
 
                 let speedMult = isAiming ? 70.0 : 150.0;
-                velocity.x += inputVec.x * speedMult * delta;
-                velocity.z += inputVec.z * speedMult * delta;
+                velocity.x -= inputVec.x * speedMult * delta;
+                velocity.z -= inputVec.z * speedMult * delta;
 
                 // ==========================================
                 // 【核心修正 2】：防黏牆 (滑步) 物理運算
