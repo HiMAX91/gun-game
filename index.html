@@ -11,17 +11,36 @@
             border-radius: 50%; transform: translate(-50%, -50%);
             box-shadow: 0 0 4px rgba(0,0,0,0.5); pointer-events: none; z-index: 10;
         }
-        /* 極簡液態玻璃 UI */
+        
+        /* 極簡液態玻璃 UI：強調邊緣折射與高透光 */
         #ui-panel {
-            position: absolute; top: 20px; left: 20px; padding: 20px 30px;
+            position: absolute; top: 20px; left: 20px; padding: 20px 30px; width: 220px;
             background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0));
-            backdrop-filter: blur(8px) brightness(1.15) contrast(1.1);
+            backdrop-filter: brightness(1.15) contrast(1.1);
             border-top: 1px solid rgba(255,255,255,0.4);
             border-left: 1px solid rgba(255,255,255,0.3);
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
             border-radius: 12px; color: #fff; font-family: sans-serif;
             pointer-events: none; z-index: 10;
         }
+
+        /* --- 新增：液態玻璃血條外框與內層 --- */
+        #health-container {
+            width: 100%; height: 14px; margin-top: 15px; border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+            border-top: 1px solid rgba(255,255,255,0.5);
+            border-left: 1px solid rgba(255,255,255,0.3);
+            border-bottom: 1px solid rgba(0,0,0,0.3);
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.3), 0 2px 8px rgba(255,255,255,0.05);
+            overflow: hidden; position: relative;
+        }
+        #health-bar {
+            width: 100%; height: 100%; border-radius: 8px;
+            background: linear-gradient(90deg, rgba(74,222,128,0.85), rgba(59,130,246,0.85));
+            box-shadow: inset 0 2px 4px rgba(255,255,255,0.4); /* 模擬玻璃內部的高光 */
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease;
+        }
+
         #instructions {
             position: absolute; width: 100%; height: 100%;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
@@ -41,24 +60,25 @@
         #joystick-base {
             position: absolute; width: 120px; height: 120px; border-radius: 50%;
             background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0));
-            border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(4px);
-            transform: translate(-50%, -50%); display: none; pointer-events: none;
+            border-top: 1px solid rgba(255,255,255,0.4); border-left: 1px solid rgba(255,255,255,0.2);
+            backdrop-filter: brightness(1.2); transform: translate(-50%, -50%); display: none; pointer-events: none;
         }
         #joystick-stick {
             position: absolute; top: 50%; left: 50%; width: 50px; height: 50px; border-radius: 50%;
-            background: rgba(255,255,255,0.3); transform: translate(-50%, -50%);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2); pointer-events: none;
+            background: linear-gradient(135deg, rgba(255,255,255,0.3), rgba(255,255,255,0.1));
+            border-top: 1px solid rgba(255,255,255,0.5);
+            transform: translate(-50%, -50%); box-shadow: 0 4px 12px rgba(0,0,0,0.3); pointer-events: none;
         }
 
         /* 液態玻璃動作按鈕 */
         .action-btn {
             position: absolute; border-radius: 50%; display: flex; justify-content: center; align-items: center;
             background: linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05));
-            border: 1px solid rgba(255,255,255,0.3); backdrop-filter: blur(6px);
-            color: white; font-family: sans-serif; font-size: 14px; font-weight: bold;
+            border-top: 1px solid rgba(255,255,255,0.4); border-left: 1px solid rgba(255,255,255,0.2);
+            backdrop-filter: brightness(1.15); color: white; font-family: sans-serif; font-size: 14px; font-weight: bold;
             pointer-events: auto; z-index: 40; box-shadow: 0 4px 16px rgba(0,0,0,0.2);
         }
-        .action-btn:active { background: rgba(255,255,255,0.3); }
+        .action-btn:active { background: rgba(255,255,255,0.25); }
         
         #btn-shoot { bottom: 50px; right: 50px; width: 80px; height: 80px; font-size: 18px; border-color: rgba(248,113,113,0.5); }
         #btn-jump { bottom: 40px; right: 150px; width: 60px; height: 60px; }
@@ -79,16 +99,22 @@
 <body>
     <div id="crosshair"></div>
     <div id="ui-panel">
-        <h3 style="margin:0 0 10px 0; font-weight: 500;">連線狀態</h3>
-        <div id="statusText">載入中...</div>
-        <div id="weaponStatus" style="margin-top: 10px; font-size: 14px; color: #ccc;">
-            武器：<span style='color:#60a5fa;'>槍</span>
+        <h3 style="margin:0 0 5px 0; font-weight: 500;">連線狀態</h3>
+        <div id="statusText" style="font-size: 14px;">載入中...</div>
+        
+        <!-- 血條容器 -->
+        <div id="health-container">
+            <div id="health-bar"></div>
+        </div>
+
+        <div id="weaponStatus" style="margin-top: 12px; font-size: 14px; color: #ccc;">
+            裝備：<span style='color:#60a5fa;'>槍</span>
         </div>
     </div>
     
     <div id="instructions">
         <h1 style="font-weight: 300;">點擊畫面開始</h1>
-        <p style="color: #aaa;">WASD 移動 | 左鍵 攻擊 | 1/2 切換武器</p>
+        <p style="color: #aaa;">WASD 移動 | 左鍵 攻擊 | 右鍵 瞄準 (電腦) | 1/2 切換武器</p>
     </div>
 
     <div id="mobile-controls">
@@ -106,7 +132,7 @@
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         let camera, scene, renderer, controls;
-        let remotePlayers = {};
+        let remotePlayers = {}; // 會同時記錄對手的網格(mesh)和血量(hp)
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false;
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
@@ -121,7 +147,6 @@
         const hipPosition = new THREE.Vector3(0.2, -0.2, -0.4);
         const aimPosition = new THREE.Vector3(0, -0.08, -0.3);
 
-        // 搖桿與同步變數
         let joyMoveX = 0, joyMoveY = 0;
         let lastSyncTime = 0; 
         
@@ -130,7 +155,6 @@
         let myUserId = null;
         let isFirebaseReady = false;
 
-        // 隨機出生座標 (避免兩個人重疊在原點)
         const startX = (Math.random() - 0.5) * 40;
         const startZ = (Math.random() - 0.5) * 40;
 
@@ -145,7 +169,7 @@
             scene.background = new THREE.Color(0x1a1a1a);
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(startX, 1.6, startZ); // 套用隨機出生點
+            camera.position.set(startX, 1.6, startZ);
 
             const glassMaterial = new THREE.MeshPhysicalMaterial({
                 transmission: 1.0, roughness: 0.02, ior: 1.5, thickness: 0.5, color: 0xeeeeee, transparent: true
@@ -155,10 +179,8 @@
             const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.4), glassMaterial);
             barrel.position.set(0, 0.05, -0.1); 
             const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, 0.08), glassMaterial);
-            handle.position.set(0, -0.05, 0.05); 
-            handle.rotation.x = Math.PI / 8;
-            gun.add(barrel); gun.add(handle);
-            gun.position.copy(hipPosition); camera.add(gun);
+            handle.position.set(0, -0.05, 0.05); handle.rotation.x = Math.PI / 8;
+            gun.add(barrel); gun.add(handle); gun.position.copy(hipPosition); camera.add(gun);
 
             knife = new THREE.Group();
             const blade = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.06, 0.35), glassMaterial);
@@ -170,7 +192,7 @@
             knife.add(blade); knife.add(guard); knife.add(knifeHandle);
             knife.position.copy(hipPosition); knife.visible = false; camera.add(knife);
 
-            const light = new THREE.HemisphereLight(0xeeeeff, 0x777788, 1); scene.add(light);
+            scene.add(new THREE.HemisphereLight(0xeeeeff, 0x777788, 1));
             scene.add(new THREE.GridHelper(100, 50, 0xffffff, 0x333333));
 
             const obstacleGeo = new THREE.BoxGeometry(4, 4, 4);
@@ -199,7 +221,6 @@
             }
             scene.add(controls.getObject());
 
-            // 電腦版鍵盤滑鼠監聽
             document.addEventListener('keydown', (e) => {
                 if(isMobile) return;
                 switch (e.code) {
@@ -235,9 +256,6 @@
             });
         }
 
-        // ==========================================
-        // 手機專用：搖桿與觸控邏輯
-        // ==========================================
         function setupMobileControls() {
             const leftZone = document.getElementById('left-zone');
             const rightZone = document.getElementById('right-zone');
@@ -248,7 +266,6 @@
             let joyStartX = 0, joyStartY = 0;
             const maxRadius = 40;
 
-            // 左側搖桿邏輯
             leftZone.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 for (let i=0; i<e.changedTouches.length; i++) {
@@ -274,7 +291,7 @@
                         let dist = Math.sqrt(dx*dx + dy*dy);
                         if (dist > maxRadius) { dx = (dx/dist)*maxRadius; dy = (dy/dist)*maxRadius; }
                         joyStick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-                        joyMoveX = dx / maxRadius; // 轉換為 -1 到 1 的向量
+                        joyMoveX = dx / maxRadius; 
                         joyMoveY = dy / maxRadius;
                     }
                 }
@@ -291,7 +308,6 @@
             leftZone.addEventListener('touchend', endJoy);
             leftZone.addEventListener('touchcancel', endJoy);
 
-            // 右側視角滑動邏輯
             let lookTouchId = null;
             let lookLastX = 0, lookLastY = 0;
             const euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -326,7 +342,6 @@
             rightZone.addEventListener('touchend', endLook);
             rightZone.addEventListener('touchcancel', endLook);
 
-            // 右下角動作按鈕
             const bindAction = (id, action) => {
                 const btn = document.getElementById(id);
                 btn.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); action(); });
@@ -340,34 +355,41 @@
             currentWeapon = type;
             if (type === 'gun') {
                 gun.visible = true; knife.visible = false;
-                document.getElementById('weaponStatus').innerHTML = "武器：<span style='color:#60a5fa;'>槍</span>";
+                document.getElementById('weaponStatus').innerHTML = "裝備：<span style='color:#60a5fa;'>槍</span>";
                 if(isMobile) document.getElementById('btn-switch').innerText = '換刀';
             } else {
                 gun.visible = false; knife.visible = true; isAiming = false;
-                document.getElementById('weaponStatus').innerHTML = "武器：<span style='color:#f87171;'>刀</span>";
+                document.getElementById('weaponStatus').innerHTML = "裝備：<span style='color:#f87171;'>刀</span>";
                 if(isMobile) document.getElementById('btn-switch').innerText = '換槍';
             }
         }
 
+        // --- 更新：傷害計算系統 ---
         function performAttack() {
-            if (currentWeapon === 'gun') {
-                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-                let targetMeshes = Object.values(remotePlayers).map(p => p.mesh);
-                const intersects = raycaster.intersectObjects(targetMeshes);
-                if (intersects.length > 0 && isFirebaseReady) {
-                    const hitId = Object.keys(remotePlayers).find(id => remotePlayers[id].mesh === intersects[0].object);
-                    if (hitId) db.ref('players/' + hitId).update({ hp: 0 });
+            if (isSlashing) return; // 避免狂點連發
+            
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            let targetMeshes = Object.values(remotePlayers).map(p => p.mesh);
+            const intersects = raycaster.intersectObjects(targetMeshes);
+
+            if (intersects.length > 0 && isFirebaseReady) {
+                // 如果是刀，距離太遠就打不到
+                if (currentWeapon === 'knife' && intersects[0].distance >= 4) return;
+
+                const hitId = Object.keys(remotePlayers).find(id => remotePlayers[id].mesh === intersects[0].object);
+                
+                if (hitId && remotePlayers[hitId]) {
+                    // 槍扣 25 滴，刀扣 50 滴
+                    const damage = currentWeapon === 'gun' ? 25 : 50; 
+                    const currentTargetHp = remotePlayers[hitId].hp;
+                    const newHp = Math.max(0, currentTargetHp - damage); // 血量最低為 0
+                    
+                    db.ref('players/' + hitId).update({ hp: newHp });
                 }
-            } else if (currentWeapon === 'knife') {
-                if (isSlashing) return;
+            }
+
+            if (currentWeapon === 'knife') {
                 isSlashing = true;
-                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-                let targetMeshes = Object.values(remotePlayers).map(p => p.mesh);
-                const intersects = raycaster.intersectObjects(targetMeshes);
-                if (intersects.length > 0 && intersects[0].distance < 4 && isFirebaseReady) {
-                    const hitId = Object.keys(remotePlayers).find(id => remotePlayers[id].mesh === intersects[0].object);
-                    if (hitId) db.ref('players/' + hitId).update({ hp: 0 });
-                }
                 setTimeout(() => { isSlashing = false; }, 300);
             }
         }
@@ -389,7 +411,6 @@
                 myPlayerRef = db.ref('players/' + myUserId);
                 
                 myPlayerRef.onDisconnect().remove();
-                // 寫入隨機出生座標
                 myPlayerRef.set({ x: startX, y: 1.6, z: startZ, hp: 100 });
                 isFirebaseReady = true;
                 listenToPlayers();
@@ -404,7 +425,6 @@
             const time = performance.now();
 
             if ((controls.isLocked || isMobile) && !isDead) {
-                // 防止切換網頁時 delta 暴增導致模型飛走
                 const delta = Math.min((time - prevTime) / 1000, 0.1); 
 
                 velocity.x -= velocity.x * 10.0 * delta;
@@ -413,15 +433,13 @@
 
                 let inputX = 0, inputY = 0;
                 if (isMobile) {
-                    inputX = joyMoveX;
-                    inputY = -joyMoveY; // DOM 的往上是負的，但 3D 前進是正的
+                    inputX = joyMoveX; inputY = -joyMoveY;
                 } else {
                     inputX = Number(moveRight) - Number(moveLeft);
                     inputY = Number(moveForward) - Number(moveBackward);
                 }
 
-                direction.x = inputX;
-                direction.z = inputY;
+                direction.x = inputX; direction.z = inputY;
                 if (direction.lengthSq() > 1) direction.normalize();
 
                 if (direction.x !== 0) velocity.x -= direction.x * 400.0 * delta;
@@ -435,7 +453,6 @@
                     velocity.y = 0; controls.getObject().position.y = 1.6; canJump = true; 
                 }
 
-                // 強制每 0.05 秒發送一次座標，保證所有玩家都能看見彼此
                 if (isFirebaseReady && (time - lastSyncTime > 50)) {
                     myPlayerRef.update({
                         x: controls.getObject().position.x,
@@ -466,6 +483,7 @@
             renderer.render(scene, camera);
         }
 
+        // --- 更新：處理血條變色與同步 ---
         function listenToPlayers() {
             db.ref('players').on('value', (snapshot) => {
                 const playersData = snapshot.val() || {};
@@ -474,10 +492,26 @@
                 document.getElementById('statusText').innerHTML =
                     playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>準備開戰！</span>" : "等待對手...";
 
-                if (playersData[myUserId] && playersData[myUserId].hp <= 0 && !isDead) {
-                    isDead = true;
-                    if(!isMobile) controls.unlock();
-                    document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>你被擊殺了...</span>";
+                // 處理自己的血條 UI
+                if (playersData[myUserId]) {
+                    const myHp = playersData[myUserId].hp;
+                    const hpBar = document.getElementById('health-bar');
+                    hpBar.style.width = myHp + '%';
+                    
+                    // 根據血量改變液態玻璃血條的顏色
+                    if (myHp > 50) {
+                        hpBar.style.background = 'linear-gradient(90deg, rgba(74,222,128,0.85), rgba(59,130,246,0.85))';
+                    } else if (myHp > 25) {
+                        hpBar.style.background = 'linear-gradient(90deg, rgba(250,204,21,0.85), rgba(249,115,22,0.85))';
+                    } else {
+                        hpBar.style.background = 'linear-gradient(90deg, rgba(248,113,113,0.85), rgba(220,38,38,0.9))';
+                    }
+
+                    if (myHp <= 0 && !isDead) {
+                        isDead = true;
+                        if(!isMobile) controls.unlock();
+                        document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>你被擊殺了...</span>";
+                    }
                 }
 
                 Object.keys(playersData).forEach(id => {
@@ -485,7 +519,8 @@
                     const data = playersData[id];
 
                     if (data.hp <= 0 && remotePlayers[id]) {
-                        scene.remove(remotePlayers[id].mesh); delete remotePlayers[id];
+                        scene.remove(remotePlayers[id].mesh); 
+                        delete remotePlayers[id];
                         document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>勝負已分：你贏了！</span>";
                         return;
                     }
@@ -495,10 +530,11 @@
                         const mat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
                         const mesh = new THREE.Mesh(geo, mat);
                         scene.add(mesh);
-                        remotePlayers[id] = { mesh: mesh };
+                        remotePlayers[id] = { mesh: mesh, hp: data.hp };
                     }
                     if (remotePlayers[id] && data.hp > 0) {
                         remotePlayers[id].mesh.position.set(data.x, data.y, data.z);
+                        remotePlayers[id].hp = data.hp; // 隨時更新對手血量資料
                     }
                 });
 
