@@ -2,20 +2,20 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Firebase 3D FPS</title>
+    <title>Firebase 3D FPS - 高質感武器版</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
         #crosshair {
             position: absolute; top: 50%; left: 50%;
             width: 4px; height: 4px; background: white;
             border-radius: 50%; transform: translate(-50%, -50%);
-            box-shadow: 0 0 4px rgba(0,0,0,0.5); pointer-events: none; z-index: 10;
+            box-shadow: 0 0 4px rgba(0,0,0,0.8); pointer-events: none; z-index: 10;
         }
         /* 極簡液態玻璃 UI */
         #ui-panel {
             position: absolute; top: 20px; left: 20px; padding: 20px 30px;
             background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0));
-            backdrop-filter: blur(2px) brightness(1.15) contrast(1.1);
+            backdrop-filter: blur(4px) brightness(1.15) contrast(1.1);
             border-top: 1px solid rgba(255,255,255,0.4);
             border-left: 1px solid rgba(255,255,255,0.3);
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
@@ -26,7 +26,7 @@
         #hp-container {
             width: 100%; height: 8px; background: rgba(255,255,255,0.1);
             border-radius: 4px; margin-top: 15px; overflow: hidden;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
         }
         #hp-bar {
             width: 100%; height: 100%; background: #4ade80;
@@ -39,13 +39,8 @@
             background-color: rgba(0,0,0,0.8); color: white; z-index: 20; cursor: pointer;
             font-family: sans-serif;
         }
-        /* 給手機端使用者的提示 */
-        #mobile-warning {
-            display: none; position: absolute; bottom: 20px; width: 100%; 
-            text-align: center; color: #facc15; font-family: sans-serif; font-size: 14px;
-        }
-        @media (hover: none) and (pointer: coarse) {
-            #mobile-warning { display: block; }
+        .key-hint {
+            color: #4ade80; font-weight: bold; padding: 0 5px;
         }
     </style>
     
@@ -68,11 +63,16 @@
         <div id="statusText" style="font-size: 14px; margin-bottom: 10px;">系統初始化中...</div>
         <div style="font-size: 12px; color: #ccc;">生命值 (HP)</div>
         <div id="hp-container"><div id="hp-bar"></div></div>
+        <div style="margin-top: 15px; font-size: 12px; color: #ccc;">
+            當前武器：<span id="weaponText" style="color: #fff; font-weight: bold;">突擊步槍</span>
+        </div>
     </div>
     <div id="instructions">
-        <h1 style="font-weight: 300;">點擊畫面開始</h1>
-        <p style="color: #aaa;">WASD 移動 | 空白鍵 跳躍 | 左鍵 射擊</p>
-        <p id="mobile-warning">⚠️ 系統偵測到觸控設備，目前控制 API 僅支援電腦鍵鼠操作</p>
+        <h1 style="font-weight: 300; letter-spacing: 2px;">點擊畫面開始</h1>
+        <p style="color: #bbb; margin-top: 20px;">
+            WASD 移動 | 空白鍵 跳躍 | 左鍵 攻擊<br><br>
+            按 <span class="key-hint">1</span> 裝備步槍 | 按 <span class="key-hint">2</span> 裝備戰術刀
+        </p>
     </div>
 
     <script type="module">
@@ -114,7 +114,6 @@
         let camera, scene, renderer, controls;
         let remotePlayers = {};
         
-        // 物理與操作變數
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false;
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
@@ -122,66 +121,123 @@
         const raycaster = new THREE.Raycaster();
         let isDead = false;
 
-        // 武器變數
-        let gunGroup;
-        let currentRecoil = 0; // 用於計算後座力動畫
+        // 武器系統變數
+        let weaponContainer = new THREE.Group();
+        let gunGroup, knifeGroup;
+        let currentWeapon = 'gun'; // 'gun' or 'knife'
+        
+        // 動畫變數
+        let currentRecoil = 0; 
+        let isSwinging = false;
+        let swingProgress = 0;
 
         init3D();
         animate();
 
         function init3D() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x111111);
-            scene.fog = new THREE.Fog(0x111111, 0, 50); 
+            // 調亮背景色
+            scene.background = new THREE.Color(0x222222);
+            scene.fog = new THREE.FogExp2(0x222222, 0.015); 
             
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.y = 1.6;
 
-            const light = new THREE.HemisphereLight(0xeeeeff, 0x444455, 1);
-            scene.add(light);
+            // --- 重大升級：高質感光影系統 ---
+            // 1. 環境光：讓暗部不要死黑
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambientLight);
+            
+            // 2. 天球光：模擬天空與地面的漫反射
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444455, 0.6);
+            scene.add(hemiLight);
 
-            // 地板
+            // 3. 方向光：提供強烈的高光反射與立體感 (對金屬材質最重要)
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(10, 20, 10);
+            scene.add(dirLight);
+
+            // 地板與障礙物 (稍微調亮以便看清楚)
             const floorGeometry = new THREE.PlaneGeometry(200, 200, 40, 40);
-            const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x333333, wireframe: true });
+            const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8, metalness: 0.2 });
             const floor = new THREE.Mesh(floorGeometry, floorMaterial);
             floor.rotation.x = -Math.PI / 2;
             scene.add(floor);
 
-            // 障礙物
             const boxGeo = new THREE.BoxGeometry(2, 2, 2);
-            const boxMat = new THREE.MeshPhongMaterial({ color: 0x555555 });
-            for(let i=0; i<10; i++) {
+            const boxMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.7 });
+            for(let i=0; i<15; i++) {
                 let box = new THREE.Mesh(boxGeo, boxMat);
-                box.position.set((Math.random() - 0.5) * 40, 1, (Math.random() - 0.5) * 40);
+                box.position.set((Math.random() - 0.5) * 60, 1, (Math.random() - 0.5) * 60);
                 scene.add(box);
             }
 
             // ==========================================
-            // 新增：打造第一人稱武器模型
+            // 打造高質感武器模型
             // ==========================================
+            
+            // 【 武器 1：高科技步槍 (Gun) 】
             gunGroup = new THREE.Group();
             
-            // 槍身
-            const gunBodyGeo = new THREE.BoxGeometry(0.1, 0.1, 0.4);
-            const gunBodyMat = new THREE.MeshPhongMaterial({ color: 0x222222 });
-            const gunBody = new THREE.Mesh(gunBodyGeo, gunBodyMat);
+            // 槍身 (消光深灰金屬)
+            const gunBodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.7, roughness: 0.4 });
+            const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.45), gunBodyMat);
             gunGroup.add(gunBody);
 
-            // 槍管
-            const barrelGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.2, 8);
-            const barrelMat = new THREE.MeshPhongMaterial({ color: 0x111111 });
-            const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+            // 槍管 (高反光銀色金屬)
+            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.9, roughness: 0.2 });
+            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.3, 16), barrelMat);
             barrel.rotation.x = Math.PI / 2;
-            barrel.position.set(0, 0.02, -0.25);
+            barrel.position.set(0, 0.03, -0.35);
             gunGroup.add(barrel);
-
-            // 將武器掛載到攝影機前方右下角
-            gunGroup.position.set(0.2, -0.2, -0.4);
-            camera.add(gunGroup);
             
-            // 重要：必須將 camera 加入 scene 才能顯示裡面的子物件(槍)
-            scene.add(camera);
+            // 瞄準鏡發光點 (Neon Blue)
+            const sightMat = new THREE.MeshStandardMaterial({ color: 0x00aaff, emissive: 0x00aaff, emissiveIntensity: 2 });
+            const sight = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.04), sightMat);
+            sight.position.set(0, 0.07, -0.1);
+            gunGroup.add(sight);
 
+            // 【 武器 2：戰術小刀 (Knife) 】
+            knifeGroup = new THREE.Group();
+            
+            // 刀刃 (超高質感物理材質：極高反光、像鏡面一樣的鋼)
+            const bladeMat = new THREE.MeshPhysicalMaterial({ 
+                color: 0xdddddd, metalness: 1.0, roughness: 0.1, 
+                clearcoat: 1.0, clearcoatRoughness: 0.1 
+            });
+            // 用壓扁的盒子模擬刀刃形狀
+            const blade = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.06, 0.35), bladeMat);
+            blade.position.set(0, 0, -0.2);
+            // 把刀尖削尖
+            blade.geometry.attributes.position.setY(0, 0.01); 
+            blade.geometry.attributes.position.setY(1, 0.01);
+            knifeGroup.add(blade);
+
+            // 刀柄 (黑色粗糙防滑橡膠)
+            const handleMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9, metalness: 0.1 });
+            const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.15, 8), handleMat);
+            handle.rotation.x = Math.PI / 2;
+            handle.position.set(0, 0, 0.05);
+            knifeGroup.add(handle);
+            
+            // 護手 (深色金屬)
+            const guard = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.02), gunBodyMat);
+            guard.position.set(0, 0, -0.03);
+            knifeGroup.add(guard);
+
+            // 將武器放入容器並掛載到攝影機
+            weaponContainer.add(gunGroup);
+            weaponContainer.add(knifeGroup);
+            
+            // 預設武器位置 (畫面右下角)
+            weaponContainer.position.set(0.25, -0.25, -0.4);
+            camera.add(weaponContainer);
+            scene.add(camera);
+            
+            // 初始設定顯示槍，隱藏刀
+            switchWeapon('gun');
+
+            // --- 渲染器與控制 ---
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
@@ -194,7 +250,7 @@
             controls.addEventListener('unlock', () => instructions.style.display = 'flex');
             scene.add(controls.getObject());
 
-            // 調整：降低跳躍力道 (250 -> 120)
+            // --- 按鍵監聽 (包含武器切換 1 和 2) ---
             document.addEventListener('keydown', (e) => {
                 switch (e.code) {
                     case 'KeyW': moveForward = true; break;
@@ -202,6 +258,8 @@
                     case 'KeyS': moveBackward = true; break;
                     case 'KeyD': moveRight = true; break;
                     case 'Space': if (canJump === true && !isDead) velocity.y += 120; canJump = false; break;
+                    case 'Digit1': switchWeapon('gun'); break;
+                    case 'Digit2': switchWeapon('knife'); break;
                 }
             });
             document.addEventListener('keyup', (e) => {
@@ -213,8 +271,9 @@
                 }
             });
 
+            // 左鍵攻擊
             document.addEventListener('mousedown', (e) => {
-                if (controls.isLocked && e.button === 0 && !isDead) shoot();
+                if (controls.isLocked && e.button === 0 && !isDead) attack();
             });
 
             window.addEventListener('resize', () => {
@@ -224,14 +283,51 @@
             });
         }
 
-        // ==========================================
-        // 3. 射擊邏輯與武器後座力
-        // ==========================================
-        function shoot() {
-            // 觸發槍身後座力 (賦予數值，由 animate 進行動畫運算)
-            currentRecoil = 0.15;
+        // 切換武器邏輯
+        function switchWeapon(type) {
+            currentWeapon = type;
+            if (type === 'gun') {
+                gunGroup.visible = true;
+                knifeGroup.visible = false;
+                document.getElementById('weaponText').innerText = "突擊步槍";
+                weaponContainer.position.set(0.25, -0.25, -0.4);
+                weaponContainer.rotation.set(0, 0, 0); // 重置旋轉
+            } else if (type === 'knife') {
+                gunGroup.visible = false;
+                knifeGroup.visible = true;
+                document.getElementById('weaponText').innerText = "戰術小刀";
+                // 拿刀的姿勢稍微往前一點、往中間一點
+                weaponContainer.position.set(0.15, -0.2, -0.3);
+                // 讓刀稍微朝前傾斜
+                weaponContainer.rotation.set(-Math.PI / 6, Math.PI / 8, 0); 
+            }
+        }
 
-            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+        // ==========================================
+        // 3. 攻擊邏輯 (槍與刀不同)
+        // ==========================================
+        function attack() {
+            if (currentWeapon === 'gun') {
+                // 【開槍邏輯】
+                currentRecoil = 0.15; // 觸發後座力
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                raycaster.far = 1000; // 槍的射程無限遠
+                checkHit(25); // 扣 25 滴血
+                
+            } else if (currentWeapon === 'knife') {
+                // 【揮刀邏輯】
+                if(isSwinging) return; // 避免連按狂抽搐
+                isSwinging = true;
+                swingProgress = 0;
+                
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                raycaster.far = 4; // 刀的射程超級短 (只有近距離才砍得到)
+                checkHit(40); // 刀比較痛，一刀 40 滴血
+            }
+        }
+
+        // 判定是否擊中敵人
+        function checkHit(damage) {
             let targetMeshes = Object.values(remotePlayers).map(p => p.mesh);
             const intersects = raycaster.intersectObjects(targetMeshes);
 
@@ -242,7 +338,7 @@
                 if (hitId && db) {
                     db.ref('players/' + hitId).once('value').then(snap => {
                         let hp = snap.val().hp;
-                        if(hp > 0) db.ref('players/' + hitId).update({ hp: Math.max(0, hp - 25) });
+                        if(hp > 0) db.ref('players/' + hitId).update({ hp: Math.max(0, hp - damage) });
                     });
                 }
             }
@@ -258,14 +354,30 @@
             if (controls.isLocked && !isDead) {
                 const delta = (time - prevTime) / 1000;
                 
-                // 處理武器後座力回正動畫 (Lerp 平滑補間)
-                if (gunGroup) {
-                    currentRecoil = THREE.MathUtils.lerp(currentRecoil, 0, 0.1);
-                    gunGroup.position.z = -0.4 + currentRecoil; // 槍身往後退
-                    gunGroup.rotation.x = currentRecoil * 0.8; // 槍身上揚
+                // --- 武器動畫系統 ---
+                if (currentWeapon === 'gun') {
+                    // 步槍後座力平滑回正
+                    currentRecoil = THREE.MathUtils.lerp(currentRecoil, 0, 0.15);
+                    weaponContainer.position.z = -0.4 + currentRecoil; 
+                    weaponContainer.rotation.x = currentRecoil * 0.8; 
+                } else if (currentWeapon === 'knife') {
+                    // 戰術刀刺擊/揮砍動畫
+                    if (isSwinging) {
+                        swingProgress += delta * 15; // 揮刀速度
+                        if (swingProgress < 1) {
+                            // 往前刺並往下揮
+                            weaponContainer.position.z = -0.3 - (Math.sin(swingProgress * Math.PI) * 0.2);
+                            weaponContainer.rotation.x = (-Math.PI / 6) - (Math.sin(swingProgress * Math.PI) * 0.5);
+                        } else {
+                            // 動畫結束，回正
+                            isSwinging = false;
+                            weaponContainer.position.z = -0.3;
+                            weaponContainer.rotation.x = -Math.PI / 6;
+                        }
+                    }
                 }
 
-                // 物理阻力
+                // --- 角色物理移動 ---
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
                 velocity.y -= 9.8 * 60.0 * delta; 
@@ -274,7 +386,6 @@
                 direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
 
-                // 調整：降低移動速度 (400 -> 150)
                 if (moveForward || moveBackward) velocity.z -= direction.z * 150.0 * delta;
                 if (moveLeft || moveRight) velocity.x -= direction.x * 150.0 * delta;
 
@@ -348,7 +459,7 @@
                     if (data.hp > 0) {
                         if (!remotePlayers[id]) {
                             const geo = new THREE.BoxGeometry(1, 2, 1);
-                            const mat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
+                            const mat = new THREE.MeshStandardMaterial({ color: 0xff4444, metalness: 0.3, roughness: 0.5 });
                             const mesh = new THREE.Mesh(geo, mat);
                             scene.add(mesh);
                             remotePlayers[id] = { mesh: mesh };
