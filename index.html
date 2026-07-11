@@ -26,6 +26,19 @@
         }
         #hp-container { width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; margin-top: 15px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5); }
         #hp-bar { width: 100%; height: 100%; background: #4ade80; transition: width 0.3s ease, background-color 0.3s ease; }
+
+        /* 手機版：獨立血條，固定左上角，跟連線狀態面板分開 */
+        #mobile-hp-panel {
+            display: none; position: absolute; top: 20px; left: 20px; padding: 12px 16px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0));
+            backdrop-filter: blur(4px) brightness(1.15) contrast(1.1);
+            border-top: 1px solid rgba(255,255,255,0.4); border-left: 1px solid rgba(255,255,255,0.3);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2); border-radius: 12px;
+            color: #fff; font-family: sans-serif; pointer-events: none; z-index: 25; width: 150px;
+        }
+        #mobile-hp-panel .hp-label { font-size: 11px; color: #ccc; margin-bottom: 6px; }
+        #mobile-hp-panel #hp-container-mobile { width: 100%; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5); }
+        #mobile-hp-panel #hp-bar-mobile { width: 100%; height: 100%; background: #4ade80; transition: width 0.3s ease, background-color 0.3s ease; }
         
         #instructions {
             position: absolute; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;
@@ -47,11 +60,24 @@
         
         #btn-shoot { bottom: 40px; right: 40px; width: 80px; height: 80px; background: rgba(248,113,113,0.3); border-color: #f87171; font-size: 18px; }
         #btn-jump { bottom: 140px; right: 30px; width: 55px; height: 55px; font-size: 14px; }
-        #btn-dash { bottom: 90px; right: 130px; width: 55px; height: 55px; color: #00aaff; border-color: #00aaff; font-size: 14px; }
-        #btn-grenade { bottom: 30px; right: 140px; width: 55px; height: 55px; color: #facc15; border-color: #facc15; font-size: 14px; }
+        #btn-dash { color: #00aaff; border-color: #00aaff; font-size: 14px; }
+        #btn-grenade { color: #facc15; border-color: #facc15; font-size: 14px; }
         #btn-switch { top: 30px; right: 30px; width: 60px; height: 60px; border-radius: 12px; font-size: 14px; }
 
-    </style>
+        /* 冷卻環形進度：包一層 wrapper，用 conic-gradient 遮罩畫圓環，
+           數值透過 JS 更新 CSS 變數 --cd (0~360deg，代表已冷卻的角度) */
+        .cd-wrapper { position: absolute; pointer-events: auto; }
+        .cd-ring {
+            position: absolute; top: -4px; left: -4px; right: -4px; bottom: -4px;
+            border-radius: 50%; pointer-events: none;
+            background: conic-gradient(rgba(255,255,255,0.9) var(--cd, 360deg), rgba(0,0,0,0.55) var(--cd, 360deg));
+            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+            transition: none;
+        }
+        .cd-ring.ready { background: conic-gradient(rgba(74,222,128,0.9) 360deg, rgba(74,222,128,0.9) 360deg); }
+
+
     
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
@@ -84,13 +110,24 @@
         <div style="margin-top: 5px; font-size: 12px; color: #ccc;">手榴彈 (G)：<span id="grenadeText" style="color: #f87171; font-weight: bold;">就緒</span></div>
     </div>
     
+    <div id="mobile-hp-panel">
+        <div class="hp-label">生命值 (HP)</div>
+        <div id="hp-container-mobile"><div id="hp-bar-mobile"></div></div>
+    </div>
+
     <div id="mobile-controls">
         <div id="touch-look-zone"></div>
         <div id="joystick-zone"></div>
         <div id="btn-shoot" class="mobile-btn">開火</div>
         <div id="btn-jump" class="mobile-btn">跳躍</div>
-        <div id="btn-dash" class="mobile-btn">瞬風</div>
-        <div id="btn-grenade" class="mobile-btn">手雷</div>
+        <div class="cd-wrapper" style="bottom: 90px; right: 130px; width: 55px; height: 55px;">
+            <div id="btn-dash" class="mobile-btn" style="position: static; width: 100%; height: 100%;">瞬風</div>
+            <div id="cd-ring-dash" class="cd-ring ready"></div>
+        </div>
+        <div class="cd-wrapper" style="bottom: 30px; right: 140px; width: 55px; height: 55px;">
+            <div id="btn-grenade" class="mobile-btn" style="position: static; width: 100%; height: 100%;">手雷</div>
+            <div id="cd-ring-grenade" class="cd-ring ready"></div>
+        </div>
         <div id="btn-switch" class="mobile-btn">換刀</div>
     </div>
 
@@ -101,6 +138,7 @@
             <span class="key-hint">左鍵</span> 射擊 | <span class="key-hint">右鍵</span> 開鏡瞄準<br>
         </p>
     </div>
+
 
     <script type="module">
         import * as THREE from 'three';
@@ -170,6 +208,8 @@
         let particles = [];
         let walls = [];
         const playerSize = new THREE.Vector3(2.5, 4, 2.5);
+        const DASH_COOLDOWN = 3000;
+        const GRENADE_COOLDOWN = 5000;
 
         init3D();
         setupMobileControls();
@@ -286,6 +326,8 @@
                 gameActive = true;
                 if(isMobile) {
                     document.getElementById('mobile-controls').style.display = 'block';
+                    document.getElementById('mobile-hp-panel').style.display = 'block';
+                    document.getElementById('ui-panel').style.display = 'none';
                 } else {
                     controls.lock(); 
                 }
@@ -450,13 +492,16 @@
                 if (dx === 0 && dz === 0) dz = 1;
             }
             
-            // 【修正】改用相機世界朝向計算，跟主移動邏輯保持一致，避免 camera.rotation.y 不可靠的問題
-            let camForward = new THREE.Vector3();
-            camera.getWorldDirection(camForward);
-            camForward.y = 0;
-            camForward.normalize();
-            let camRight = new THREE.Vector3();
-            camRight.crossVectors(camForward, camera.up).normalize();
+            // 【修正】改用純 yaw 角度計算，跟主移動邏輯保持一致，手機/桌面都穩定
+            let yawEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+            if (isMobile) {
+                yawEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+            } else {
+                yawEuler.setFromQuaternion(controls.getObject().quaternion, 'YXZ');
+            }
+            let yaw = yawEuler.y;
+            let camForward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+            let camRight = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
 
             let moveVec = new THREE.Vector3();
             moveVec.addScaledVector(camForward, -dz);
@@ -468,7 +513,7 @@
             
             lastDashTime = performance.now();
             document.getElementById('dashText').innerHTML = "<span style='color:#facc15;'>冷卻中...</span>";
-            setTimeout(() => { document.getElementById('dashText').innerHTML = "<span style='color:#00aaff; font-weight:bold;'>就緒</span>"; }, 3000);
+            setTimeout(() => { document.getElementById('dashText').innerHTML = "<span style='color:#00aaff; font-weight:bold;'>就緒</span>"; }, DASH_COOLDOWN);
         }
 
         function throwGrenade() {
@@ -485,7 +530,7 @@
             grenades.push({ mesh: grenadeMesh, vel: throwVel, timer: 2.0 });
             lastGrenadeTime = performance.now();
             document.getElementById('grenadeText').innerHTML = "<span style='color:#facc15;'>冷卻中...</span>";
-            setTimeout(() => { document.getElementById('grenadeText').innerHTML = "<span style='color:#f87171; font-weight:bold;'>就緒</span>"; }, 5000);
+            setTimeout(() => { document.getElementById('grenadeText').innerHTML = "<span style='color:#f87171; font-weight:bold;'>就緒</span>"; }, GRENADE_COOLDOWN);
         }
 
         function triggerExplosion(position) {
@@ -575,10 +620,36 @@
             document.getElementById('ch-right').style.transform = `translateX(${8 + displaySpread}px)`;
         }
 
+        function updateMobileCooldownRings() {
+            if (!isMobile) return;
+            const now = performance.now();
+
+            const dashElapsed = now - lastDashTime;
+            const dashRing = document.getElementById('cd-ring-dash');
+            if (dashElapsed >= DASH_COOLDOWN) {
+                dashRing.classList.add('ready');
+            } else {
+                dashRing.classList.remove('ready');
+                let deg = Math.min(360, (dashElapsed / DASH_COOLDOWN) * 360);
+                dashRing.style.setProperty('--cd', deg + 'deg');
+            }
+
+            const grenadeElapsed = now - lastGrenadeTime;
+            const grenadeRing = document.getElementById('cd-ring-grenade');
+            if (grenadeElapsed >= GRENADE_COOLDOWN) {
+                grenadeRing.classList.add('ready');
+            } else {
+                grenadeRing.classList.remove('ready');
+                let deg = Math.min(360, (grenadeElapsed / GRENADE_COOLDOWN) * 360);
+                grenadeRing.style.setProperty('--cd', deg + 'deg');
+            }
+        }
+
         function animate() {
             requestAnimationFrame(animate);
             const time = performance.now();
             const delta = (time - prevTime) / 1000;
+            updateMobileCooldownRings();
 
             if (gameActive && !isDead) {
                 let targetFov = isAiming ? 45 : 75; 
@@ -615,21 +686,27 @@
                 }
 
                 // ==========================================
-                // 【核心修正 1】：用相機「世界朝向向量」算移動方向，
-                // 不要用 camera.rotation.y —— 在 PointerLockControls 底下，
-                // 左右轉其實是外層 controls.getObject() 在轉，camera 本身只管上下看，
-                // 導致 camera.rotation.y 在某些角度下不準確（甚至跳變），
-                // 這正是 W 有時候變成走向側邊或後面的原因。
+                // 【核心修正 1】：用「純水平朝向角(yaw)」算移動方向，
+                // 不用 camera.getWorldDirection() 直接投影——
+                // 手機版低頭/抬頭幅度大時，世界朝向的水平投影長度會趨近 0，
+                // normalize() 對接近零的向量運算會不穩定，導致移動方向亂跳。
+                // 改用四元數還原出真正的 yaw 角，永遠穩定，且與桌面 PointerLockControls
+                // 的 controls.getObject().rotation.y（yaw 容器）等價。
                 // ==========================================
-                let camForward = new THREE.Vector3();
-                camera.getWorldDirection(camForward);
-                camForward.y = 0;
-                camForward.normalize();
-                let camRight = new THREE.Vector3();
-                camRight.crossVectors(camForward, camera.up).normalize();
+                let yawEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+                if (isMobile) {
+                    // 手機：yaw 直接存在 camera.quaternion 上
+                    yawEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+                } else {
+                    // 桌面：yaw 存在 controls 外層容器上
+                    yawEuler.setFromQuaternion(controls.getObject().quaternion, 'YXZ');
+                }
+                let yaw = yawEuler.y;
+
+                let camForward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+                let camRight = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
 
                 // dz>0 代表按 S（後退），dx>0 代表按 D（右）
-                // 這裡用世界朝向組合出實際移動向量
                 let inputVec = new THREE.Vector3();
                 inputVec.addScaledVector(camForward, -dz);
                 inputVec.addScaledVector(camRight, dx);
@@ -710,8 +787,11 @@
                 }
                 if (playersData[myUserId]) {
                     let hp = playersData[myUserId].hp;
+                    let hpColor = hp > 50 ? '#4ade80' : (hp > 25 ? '#facc15' : '#f87171');
                     document.getElementById('hp-bar').style.width = hp + '%';
-                    document.getElementById('hp-bar').style.background = hp > 50 ? '#4ade80' : (hp > 25 ? '#facc15' : '#f87171');
+                    document.getElementById('hp-bar').style.background = hpColor;
+                    document.getElementById('hp-bar-mobile').style.width = hp + '%';
+                    document.getElementById('hp-bar-mobile').style.background = hpColor;
                     
                     if (hp <= 0 && !isDead) {
                         isDead = true; 
@@ -720,6 +800,7 @@
                         document.getElementById('instructions').style.display = 'flex';
                         document.getElementById('instructions').innerHTML = "<h1 style='color:#f87171'>YOU DIED</h1><p style='color:#bbb'>請重新整理網頁</p>";
                         document.getElementById('mobile-controls').style.display = 'none';
+                        document.getElementById('mobile-hp-panel').style.display = 'none';
                     }
                 }
                 Object.keys(playersData).forEach(id => {
