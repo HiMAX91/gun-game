@@ -408,7 +408,7 @@
             manager.on('move', (e, data) => {
                 let force = Math.min(data.force, 1);
                 mobileMoveX = data.vector.x * force;   // 左負右正
-                mobileMoveZ = -data.vector.y * force;  // Nipple y往上是正，但3D裡往前是 -Z
+                mobileMoveZ = data.vector.y * force;   // 往前推=正，與桌面「按W前進=dz正」的符號定義保持一致
             });
             manager.on('end', () => { mobileMoveX = 0; mobileMoveZ = 0; });
 
@@ -488,7 +488,7 @@
         function dash() {
             let dx, dz;
             if(isMobile) {
-                dx = mobileMoveX || 0; dz = mobileMoveZ || -1; // 預設往前
+                dx = mobileMoveX || 0; dz = mobileMoveZ || 1; // 預設往前
             } else {
                 direction.z = Number(moveForward) - Number(moveBackward);
                 direction.x = Number(moveRight) - Number(moveLeft);
@@ -508,13 +508,14 @@
             let camForward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
             let camRight = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
 
+            // dz > 0（前進）、dx > 0（向右），與主移動邏輯符號定義一致
             let moveVec = new THREE.Vector3();
-            moveVec.addScaledVector(camForward, -dz);
+            moveVec.addScaledVector(camForward, dz);
             moveVec.addScaledVector(camRight, dx);
             if (moveVec.lengthSq() > 0) moveVec.normalize();
             
-            velocity.x -= moveVec.x * 600.0;
-            velocity.z -= moveVec.z * 600.0;
+            velocity.x += moveVec.x * 600.0;
+            velocity.z += moveVec.z * 600.0;
             
             lastDashTime = performance.now();
             document.getElementById('dashText').innerHTML = "<span style='color:#facc15;'>冷卻中...</span>";
@@ -705,12 +706,10 @@
                 }
 
                 // ==========================================
-                // 【核心修正 1】：用「純水平朝向角(yaw)」算移動方向，
-                // 不用 camera.getWorldDirection() 直接投影——
-                // 手機版低頭/抬頭幅度大時，世界朝向的水平投影長度會趨近 0，
-                // normalize() 對接近零的向量運算會不穩定，導致移動方向亂跳。
-                // 改用四元數還原出真正的 yaw 角，永遠穩定，且與桌面 PointerLockControls
-                // 的 controls.getObject().rotation.y（yaw 容器）等價。
+                // 【核心修正 1】：用「純水平朝向角(yaw)」算移動方向。
+                // 統一符號定義：dz > 0 代表前進，dx > 0 代表向右。
+                // camForward 是相機在水平面上的實際朝向（yaw=0 時朝 -Z，
+                // 這是 Three.js 相機預設朝向）；camRight 是右手方向。
                 // ==========================================
                 let yawEuler = new THREE.Euler(0, 0, 0, 'YXZ');
                 if (isMobile) {
@@ -725,15 +724,15 @@
                 let camForward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
                 let camRight = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
 
-                // dz>0 代表按 S（後退），dx>0 代表按 D（右）
+                // dz > 0（前進）→ 沿 camForward 走；dx > 0（向右）→ 沿 camRight 走
                 let inputVec = new THREE.Vector3();
-                inputVec.addScaledVector(camForward, -dz);
+                inputVec.addScaledVector(camForward, dz);
                 inputVec.addScaledVector(camRight, dx);
                 if (inputVec.lengthSq() > 0) inputVec.normalize().multiplyScalar(Math.min(1, Math.hypot(dx, dz)));
 
                 let speedMult = isAiming ? 70.0 : 150.0;
-                velocity.x -= inputVec.x * speedMult * delta;
-                velocity.z -= inputVec.z * speedMult * delta;
+                velocity.x += inputVec.x * speedMult * delta;
+                velocity.z += inputVec.z * speedMult * delta;
 
                 // ==========================================
                 // 【核心修正 2】：防黏牆 (滑步) 物理運算
