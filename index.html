@@ -2,91 +2,60 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Firebase 3D FPS</title>
+    <title>Firebase 3D FPS - 特戰英豪手感版</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; touch-action: none; user-select: none; -webkit-user-select: none; }
-        #crosshair {
-            position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: white;
-            border-radius: 50%; transform: translate(-50%, -50%);
-            box-shadow: 0 0 4px rgba(0,0,0,0.5); pointer-events: none; z-index: 10;
-        }
+        body { margin: 0; overflow: hidden; background-color: #000; }
         
-        /* 極簡液態玻璃 UI：強調邊緣折射與高透光 */
+        /* 特戰動態準星 */
+        #crosshair {
+            position: absolute; top: 50%; left: 50%;
+            width: 30px; height: 30px; pointer-events: none; z-index: 10;
+            transform: translate(-50%, -50%);
+        }
+        .ch-line {
+            position: absolute; background: #00ff00;
+            transition: all 0.05s ease-out;
+        }
+        .ch-top { top: 13px; left: 14px; width: 2px; height: 6px; transform: translateY(-8px); }
+        .ch-bottom { bottom: 13px; left: 14px; width: 2px; height: 6px; transform: translateY(8px); }
+        .ch-left { left: 13px; top: 14px; width: 6px; height: 2px; transform: translateX(-8px); }
+        .ch-right { right: 13px; top: 14px; width: 6px; height: 2px; transform: translateX(8px); }
+
+        /* 極簡液態玻璃 UI */
         #ui-panel {
-            position: absolute; top: 20px; left: 20px; padding: 20px 30px; width: 220px;
+            position: absolute; top: 20px; left: 20px; padding: 20px 30px;
             background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0));
-            backdrop-filter: brightness(1.15) contrast(1.1);
+            backdrop-filter: blur(4px) brightness(1.15) contrast(1.1);
             border-top: 1px solid rgba(255,255,255,0.4);
             border-left: 1px solid rgba(255,255,255,0.3);
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
-            border-radius: 12px; color: #fff; font-family: sans-serif;
-            pointer-events: none; z-index: 10;
+            border-radius: 12px;
+            color: #fff; font-family: sans-serif;
+            pointer-events: none; z-index: 10; min-width: 200px;
         }
-
-        /* --- 新增：液態玻璃血條外框與內層 --- */
-        #health-container {
-            width: 100%; height: 14px; margin-top: 15px; border-radius: 8px;
-            background: rgba(255,255,255,0.05);
-            border-top: 1px solid rgba(255,255,255,0.5);
-            border-left: 1px solid rgba(255,255,255,0.3);
-            border-bottom: 1px solid rgba(0,0,0,0.3);
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.3), 0 2px 8px rgba(255,255,255,0.05);
-            overflow: hidden; position: relative;
+        #hp-container {
+            width: 100%; height: 8px; background: rgba(255,255,255,0.1);
+            border-radius: 4px; margin-top: 15px; overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
         }
-        #health-bar {
-            width: 100%; height: 100%; border-radius: 8px;
-            background: linear-gradient(90deg, rgba(74,222,128,0.85), rgba(59,130,246,0.85));
-            box-shadow: inset 0 2px 4px rgba(255,255,255,0.4); /* 模擬玻璃內部的高光 */
-            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease;
+        #hp-bar {
+            width: 100%; height: 100%; background: #4ade80;
+            transition: width 0.3s ease, background-color 0.3s ease;
         }
-
+        
         #instructions {
             position: absolute; width: 100%; height: 100%;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
             background-color: rgba(0,0,0,0.8); color: white; z-index: 20; cursor: pointer;
             font-family: sans-serif;
         }
-        
-        /* 手機觸控介面設定 */
-        #mobile-controls {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; z-index: 30; display: none;
-        }
-        #left-zone { position: absolute; top: 0; left: 0; width: 50%; height: 100%; pointer-events: auto; }
-        #right-zone { position: absolute; top: 0; right: 0; width: 50%; height: 100%; pointer-events: auto; }
-        
-        /* 液態玻璃搖桿外觀 */
-        #joystick-base {
-            position: absolute; width: 120px; height: 120px; border-radius: 50%;
-            background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0));
-            border-top: 1px solid rgba(255,255,255,0.4); border-left: 1px solid rgba(255,255,255,0.2);
-            backdrop-filter: brightness(1.2); transform: translate(-50%, -50%); display: none; pointer-events: none;
-        }
-        #joystick-stick {
-            position: absolute; top: 50%; left: 50%; width: 50px; height: 50px; border-radius: 50%;
-            background: linear-gradient(135deg, rgba(255,255,255,0.3), rgba(255,255,255,0.1));
-            border-top: 1px solid rgba(255,255,255,0.5);
-            transform: translate(-50%, -50%); box-shadow: 0 4px 12px rgba(0,0,0,0.3); pointer-events: none;
-        }
-
-        /* 液態玻璃動作按鈕 */
-        .action-btn {
-            position: absolute; border-radius: 50%; display: flex; justify-content: center; align-items: center;
-            background: linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05));
-            border-top: 1px solid rgba(255,255,255,0.4); border-left: 1px solid rgba(255,255,255,0.2);
-            backdrop-filter: brightness(1.15); color: white; font-family: sans-serif; font-size: 14px; font-weight: bold;
-            pointer-events: auto; z-index: 40; box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-        }
-        .action-btn:active { background: rgba(255,255,255,0.25); }
-        
-        #btn-shoot { bottom: 50px; right: 50px; width: 80px; height: 80px; font-size: 18px; border-color: rgba(248,113,113,0.5); }
-        #btn-jump { bottom: 40px; right: 150px; width: 60px; height: 60px; }
-        #btn-switch { bottom: 150px; right: 60px; width: 60px; height: 60px; }
+        .key-hint { color: #4ade80; font-weight: bold; padding: 0 5px; }
+        .skill-hint { color: #00aaff; font-weight: bold; padding: 0 5px; }
     </style>
-
+    
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
     <script type="importmap">
         {
             "imports": {
@@ -97,42 +66,72 @@
     </script>
 </head>
 <body>
-    <div id="crosshair"></div>
+    <div id="crosshair">
+        <div class="ch-line ch-top" id="ch-top"></div>
+        <div class="ch-line ch-bottom" id="ch-bottom"></div>
+        <div class="ch-line ch-left" id="ch-left"></div>
+        <div class="ch-line ch-right" id="ch-right"></div>
+    </div>
+    
     <div id="ui-panel">
-        <h3 style="margin:0 0 5px 0; font-weight: 500;">連線狀態</h3>
-        <div id="statusText" style="font-size: 14px;">載入中...</div>
-        
-        <!-- 血條容器 -->
-        <div id="health-container">
-            <div id="health-bar"></div>
+        <h3 style="margin:0 0 10px 0; font-weight: 500; font-size: 16px;">連線狀態</h3>
+        <div id="statusText" style="font-size: 14px; margin-bottom: 10px;">系統初始化中...</div>
+        <div style="font-size: 12px; color: #ccc;">生命值 (HP)</div>
+        <div id="hp-container"><div id="hp-bar"></div></div>
+        <div style="margin-top: 15px; font-size: 12px; color: #ccc;">
+            武器：<span id="weaponText" style="color: #fff; font-weight: bold;">突擊步槍</span>
         </div>
-
-        <div id="weaponStatus" style="margin-top: 12px; font-size: 14px; color: #ccc;">
-            裝備：<span style='color:#60a5fa;'>槍</span>
+        <div style="margin-top: 5px; font-size: 12px; color: #ccc;">
+            瞬風 (Dash)：<span id="dashText" style="color: #00aaff; font-weight: bold;">就緒</span>
         </div>
     </div>
     
     <div id="instructions">
-        <h1 style="font-weight: 300;">點擊畫面開始</h1>
-        <p style="color: #aaa;">WASD 移動 | 左鍵 攻擊 | 右鍵 瞄準 (電腦) | 1/2 切換武器</p>
-    </div>
-
-    <div id="mobile-controls">
-        <div id="left-zone">
-            <div id="joystick-base"><div id="joystick-stick"></div></div>
-        </div>
-        <div id="right-zone"></div>
-        <div id="btn-shoot" class="action-btn">攻擊</div>
-        <div id="btn-jump" class="action-btn">跳</div>
-        <div id="btn-switch" class="action-btn">換槍</div>
+        <h1 style="font-weight: 300; letter-spacing: 2px;">點擊畫面開始</h1>
+        <p style="color: #bbb; margin-top: 20px;">
+            WASD 移動 | 空白鍵 跳躍 | 左鍵 射擊<br><br>
+            按 <span class="key-hint">1</span> 步槍 | 按 <span class="key-hint">2</span> 戰術刀 | 按 <span class="skill-hint">E</span> 瞬風衝刺
+        </p>
     </div>
 
     <script type="module">
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
+        // ==========================================
+        // 1. Firebase 初始化
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyD1lrv2JndZQQuWFqlMKcskEvT1sELjlno",
+            authDomain: "gun-game-64749.firebaseapp.com",
+            databaseURL: "https://gun-game-64749-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "gun-game-64749",
+            storageBucket: "gun-game-64749.firebasestorage.app",
+            messagingSenderId: "614674178389",
+            appId: "1:614674178389:web:a86a15aa6b835b6633cfdc",
+            measurementId: "G-YJ4WRL03ZX"
+        };
+
+        let db = null, myUserId = null, myPlayerRef = null;
+
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.database();
+            myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
+            myPlayerRef = db.ref('players/' + myUserId);
+            myPlayerRef.onDisconnect().remove();
+            myPlayerRef.set({ x: 0, y: 1.6, z: 0, hp: 100 });
+            document.getElementById('statusText').innerHTML = "連線成功";
+        } catch (error) {
+            document.getElementById('statusText').innerHTML = "<span style='color:#fbd38d;'>離線測試模式</span>";
+        }
+
+        // ==========================================
+        // 2. Three.js 場景與變數
+        // ==========================================
         let camera, scene, renderer, controls;
-        let remotePlayers = {}; // 會同時記錄對手的網格(mesh)和血量(hp)
+        let remotePlayers = {};
+        
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false;
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
@@ -140,68 +139,89 @@
         const raycaster = new THREE.Raycaster();
         let isDead = false;
 
-        let gun, knife;
-        let currentWeapon = 'gun';
-        let isAiming = false;
-        let isSlashing = false;
-        const hipPosition = new THREE.Vector3(0.2, -0.2, -0.4);
-        const aimPosition = new THREE.Vector3(0, -0.08, -0.3);
-
-        let joyMoveX = 0, joyMoveY = 0;
-        let lastSyncTime = 0; 
+        // 技能與動畫變數
+        let weaponContainer = new THREE.Group();
+        let gunGroup, knifeGroup;
+        let currentWeapon = 'gun'; 
+        let currentRecoil = 0; 
+        let isSwinging = false;
+        let swingProgress = 0;
         
-        let db = null;
-        let myPlayerRef = null;
-        let myUserId = null;
-        let isFirebaseReady = false;
-
-        const startX = (Math.random() - 0.5) * 40;
-        const startZ = (Math.random() - 0.5) * 40;
-
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
+        // 特戰機制變數
+        let crosshairSpread = 0; // 準星擴散度
+        let lastDashTime = 0;    // 衝刺冷卻
 
         init3D();
         animate();
-        initFirebase();
 
         function init3D() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x1a1a1a);
-
+            scene.background = new THREE.Color(0x222222);
+            scene.fog = new THREE.FogExp2(0x222222, 0.015); 
+            
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(startX, 1.6, startZ);
+            camera.position.y = 1.6;
 
-            const glassMaterial = new THREE.MeshPhysicalMaterial({
-                transmission: 1.0, roughness: 0.02, ior: 1.5, thickness: 0.5, color: 0xeeeeee, transparent: true
-            });
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambientLight);
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444455, 0.6);
+            scene.add(hemiLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(10, 20, 10);
+            scene.add(dirLight);
 
-            gun = new THREE.Group();
-            const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.4), glassMaterial);
-            barrel.position.set(0, 0.05, -0.1); 
-            const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, 0.08), glassMaterial);
-            handle.position.set(0, -0.05, 0.05); handle.rotation.x = Math.PI / 8;
-            gun.add(barrel); gun.add(handle); gun.position.copy(hipPosition); camera.add(gun);
+            const floorGeometry = new THREE.PlaneGeometry(200, 200, 40, 40);
+            const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8, metalness: 0.2 });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            scene.add(floor);
 
-            knife = new THREE.Group();
-            const blade = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.06, 0.35), glassMaterial);
-            blade.position.set(0, 0, -0.2); 
-            const guard = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.12, 0.02), glassMaterial);
-            guard.position.set(0, 0, -0.02); 
-            const knifeHandle = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.04, 0.15), glassMaterial);
-            knifeHandle.position.set(0, 0, 0.06); 
-            knife.add(blade); knife.add(guard); knife.add(knifeHandle);
-            knife.position.copy(hipPosition); knife.visible = false; camera.add(knife);
-
-            scene.add(new THREE.HemisphereLight(0xeeeeff, 0x777788, 1));
-            scene.add(new THREE.GridHelper(100, 50, 0xffffff, 0x333333));
-
-            const obstacleGeo = new THREE.BoxGeometry(4, 4, 4);
-            const obstacleMat = new THREE.MeshPhysicalMaterial({ color: 0xeeeeee, transmission: 0.9, ior: 1.5, transparent: true, roughness: 0.1 });
-            for(let i = 0; i < 15; i++) {
-                const box = new THREE.Mesh(obstacleGeo, obstacleMat);
-                box.position.set((Math.random() - 0.5) * 60, 2, (Math.random() - 0.5) * 60);
+            const boxGeo = new THREE.BoxGeometry(2, 2, 2);
+            const boxMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.7 });
+            for(let i=0; i<15; i++) {
+                let box = new THREE.Mesh(boxGeo, boxMat);
+                box.position.set((Math.random() - 0.5) * 60, 1, (Math.random() - 0.5) * 60);
                 scene.add(box);
             }
+
+            // 武器模型建立
+            gunGroup = new THREE.Group();
+            const gunBodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.7, roughness: 0.4 });
+            const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.45), gunBodyMat);
+            gunGroup.add(gunBody);
+            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.9, roughness: 0.2 });
+            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.3, 16), barrelMat);
+            barrel.rotation.x = Math.PI / 2;
+            barrel.position.set(0, 0.03, -0.35);
+            gunGroup.add(barrel);
+            const sightMat = new THREE.MeshStandardMaterial({ color: 0x00aaff, emissive: 0x00aaff, emissiveIntensity: 2 });
+            const sight = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.04), sightMat);
+            sight.position.set(0, 0.07, -0.1);
+            gunGroup.add(sight);
+
+            knifeGroup = new THREE.Group();
+            const bladeMat = new THREE.MeshPhysicalMaterial({ color: 0xdddddd, metalness: 1.0, roughness: 0.1, clearcoat: 1.0 });
+            const blade = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.06, 0.35), bladeMat);
+            blade.position.set(0, 0, -0.2);
+            blade.geometry.attributes.position.setY(0, 0.01); 
+            blade.geometry.attributes.position.setY(1, 0.01);
+            knifeGroup.add(blade);
+            const handleMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9, metalness: 0.1 });
+            const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.15, 8), handleMat);
+            handle.rotation.x = Math.PI / 2;
+            handle.position.set(0, 0, 0.05);
+            knifeGroup.add(handle);
+            const guard = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.02), gunBodyMat);
+            guard.position.set(0, 0, -0.03);
+            knifeGroup.add(guard);
+
+            weaponContainer.add(gunGroup);
+            weaponContainer.add(knifeGroup);
+            weaponContainer.position.set(0.25, -0.25, -0.4);
+            camera.add(weaponContainer);
+            scene.add(camera);
+            
+            switchWeapon('gun');
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -209,32 +229,30 @@
 
             controls = new PointerLockControls(camera, document.body);
             const instructions = document.getElementById('instructions');
-
-            if (isMobile) {
-                instructions.style.display = 'none';
-                document.getElementById('mobile-controls').style.display = 'block';
-                setupMobileControls();
-            } else {
-                instructions.addEventListener('click', () => { if(!isDead) controls.lock(); });
-                controls.addEventListener('lock', () => instructions.style.display = 'none');
-                controls.addEventListener('unlock', () => instructions.style.display = 'flex');
-            }
+            
+            instructions.addEventListener('click', () => { if(!isDead) controls.lock(); });
+            controls.addEventListener('lock', () => instructions.style.display = 'none');
+            controls.addEventListener('unlock', () => instructions.style.display = 'flex');
             scene.add(controls.getObject());
 
             document.addEventListener('keydown', (e) => {
-                if(isMobile) return;
                 switch (e.code) {
                     case 'KeyW': moveForward = true; break;
                     case 'KeyA': moveLeft = true; break;
                     case 'KeyS': moveBackward = true; break;
                     case 'KeyD': moveRight = true; break;
-                    case 'Space': if (canJump) velocity.y += 350; canJump = false; break;
+                    case 'Space': if (canJump === true && !isDead) velocity.y += 120; canJump = false; break;
                     case 'Digit1': switchWeapon('gun'); break;
                     case 'Digit2': switchWeapon('knife'); break;
+                    // 【捷風瞬風技能】
+                    case 'KeyE': 
+                        if (performance.now() - lastDashTime > 3000 && !isDead) {
+                            dash(); 
+                        }
+                        break;
                 }
             });
             document.addEventListener('keyup', (e) => {
-                if(isMobile) return;
                 switch (e.code) {
                     case 'KeyW': moveForward = false; break;
                     case 'KeyA': moveLeft = false; break;
@@ -243,301 +261,216 @@
                 }
             });
 
-            document.addEventListener('contextmenu', e => e.preventDefault());
             document.addEventListener('mousedown', (e) => {
-                if (isMobile || !controls.isLocked || isDead) return;
-                if (e.button === 0) performAttack();
-                if (e.button === 2 && currentWeapon === 'gun') isAiming = true;
+                if (controls.isLocked && e.button === 0 && !isDead) attack();
             });
-            document.addEventListener('mouseup', (e) => { if (!isMobile && e.button === 2) isAiming = false; });
+
             window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
             });
-        }
-
-        function setupMobileControls() {
-            const leftZone = document.getElementById('left-zone');
-            const rightZone = document.getElementById('right-zone');
-            const joyBase = document.getElementById('joystick-base');
-            const joyStick = document.getElementById('joystick-stick');
-            
-            let joyTouchId = null;
-            let joyStartX = 0, joyStartY = 0;
-            const maxRadius = 40;
-
-            leftZone.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                for (let i=0; i<e.changedTouches.length; i++) {
-                    let t = e.changedTouches[i];
-                    if (joyTouchId === null) {
-                        joyTouchId = t.identifier;
-                        joyStartX = t.clientX; joyStartY = t.clientY;
-                        joyBase.style.display = 'block';
-                        joyBase.style.left = joyStartX + 'px'; joyBase.style.top = joyStartY + 'px';
-                        joyStick.style.transform = `translate(-50%, -50%)`;
-                        joyMoveX = 0; joyMoveY = 0;
-                    }
-                }
-            });
-
-            leftZone.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                for (let i=0; i<e.changedTouches.length; i++) {
-                    let t = e.changedTouches[i];
-                    if (t.identifier === joyTouchId) {
-                        let dx = t.clientX - joyStartX;
-                        let dy = t.clientY - joyStartY;
-                        let dist = Math.sqrt(dx*dx + dy*dy);
-                        if (dist > maxRadius) { dx = (dx/dist)*maxRadius; dy = (dy/dist)*maxRadius; }
-                        joyStick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-                        joyMoveX = dx / maxRadius; 
-                        joyMoveY = dy / maxRadius;
-                    }
-                }
-            });
-
-            const endJoy = (e) => {
-                for (let i=0; i<e.changedTouches.length; i++) {
-                    if (e.changedTouches[i].identifier === joyTouchId) {
-                        joyTouchId = null; joyBase.style.display = 'none';
-                        joyMoveX = 0; joyMoveY = 0;
-                    }
-                }
-            };
-            leftZone.addEventListener('touchend', endJoy);
-            leftZone.addEventListener('touchcancel', endJoy);
-
-            let lookTouchId = null;
-            let lookLastX = 0, lookLastY = 0;
-            const euler = new THREE.Euler(0, 0, 0, 'YXZ');
-
-            rightZone.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                for (let i=0; i<e.changedTouches.length; i++) {
-                    let t = e.changedTouches[i];
-                    if (lookTouchId === null) { lookTouchId = t.identifier; lookLastX = t.clientX; lookLastY = t.clientY; }
-                }
-            });
-
-            rightZone.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                for (let i=0; i<e.changedTouches.length; i++) {
-                    let t = e.changedTouches[i];
-                    if (t.identifier === lookTouchId) {
-                        let dx = t.clientX - lookLastX; let dy = t.clientY - lookLastY;
-                        lookLastX = t.clientX; lookLastY = t.clientY;
-                        
-                        euler.setFromQuaternion(camera.quaternion);
-                        euler.y -= dx * 0.005; euler.x -= dy * 0.005;
-                        euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x));
-                        camera.quaternion.setFromEuler(euler);
-                    }
-                }
-            });
-
-            const endLook = (e) => {
-                for(let i=0; i<e.changedTouches.length; i++) if(e.changedTouches[i].identifier === lookTouchId) lookTouchId = null;
-            };
-            rightZone.addEventListener('touchend', endLook);
-            rightZone.addEventListener('touchcancel', endLook);
-
-            const bindAction = (id, action) => {
-                const btn = document.getElementById(id);
-                btn.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); action(); });
-            };
-            bindAction('btn-shoot', performAttack);
-            bindAction('btn-jump', () => { if (canJump) velocity.y += 350; canJump = false; });
-            bindAction('btn-switch', () => switchWeapon(currentWeapon === 'gun' ? 'knife' : 'gun'));
         }
 
         function switchWeapon(type) {
             currentWeapon = type;
             if (type === 'gun') {
-                gun.visible = true; knife.visible = false;
-                document.getElementById('weaponStatus').innerHTML = "裝備：<span style='color:#60a5fa;'>槍</span>";
-                if(isMobile) document.getElementById('btn-switch').innerText = '換刀';
-            } else {
-                gun.visible = false; knife.visible = true; isAiming = false;
-                document.getElementById('weaponStatus').innerHTML = "裝備：<span style='color:#f87171;'>刀</span>";
-                if(isMobile) document.getElementById('btn-switch').innerText = '換槍';
+                gunGroup.visible = true; knifeGroup.visible = false;
+                document.getElementById('weaponText').innerText = "突擊步槍";
+                weaponContainer.position.set(0.25, -0.25, -0.4);
+                weaponContainer.rotation.set(0, 0, 0);
+            } else if (type === 'knife') {
+                gunGroup.visible = false; knifeGroup.visible = true;
+                document.getElementById('weaponText').innerText = "戰術小刀";
+                weaponContainer.position.set(0.15, -0.2, -0.3);
+                weaponContainer.rotation.set(-Math.PI / 6, Math.PI / 8, 0); 
             }
         }
 
-        // --- 更新：傷害計算系統 ---
-        function performAttack() {
-            if (isSlashing) return; // 避免狂點連發
+        function dash() {
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.normalize();
             
-            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            // 如果原地按 E，預設往前衝
+            if (direction.x === 0 && direction.z === 0) direction.z = 1;
+            
+            // 瞬間給予極大速度
+            velocity.x -= direction.x * 2000.0;
+            velocity.z -= direction.z * 2000.0;
+            
+            lastDashTime = performance.now();
+            document.getElementById('dashText').innerHTML = "<span style='color:#facc15;'>冷卻中...</span>";
+            
+            setTimeout(() => {
+                document.getElementById('dashText').innerHTML = "<span style='color:#00aaff; font-weight:bold;'>就緒</span>";
+            }, 3000);
+        }
+
+        // ==========================================
+        // 3. 攻擊與急停隨機彈道
+        // ==========================================
+        function attack() {
+            if (currentWeapon === 'gun') {
+                currentRecoil = 0.15;
+                // 開槍也會造成準星擴散
+                crosshairSpread += 15; 
+                
+                // 【彈道隨機偏移】：走動或跳躍時，子彈會亂飄
+                let currentError = (crosshairSpread / 100) * 0.1;
+                let randomX = (Math.random() - 0.5) * currentError;
+                let randomY = (Math.random() - 0.5) * currentError;
+                
+                let dir = new THREE.Vector3(randomX, randomY, -1).unproject(camera).sub(camera.position).normalize();
+                raycaster.set(camera.position, dir);
+                raycaster.far = 1000; 
+                checkHit(35); 
+                
+            } else if (currentWeapon === 'knife') {
+                if(isSwinging) return; 
+                isSwinging = true;
+                swingProgress = 0;
+                
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                raycaster.far = 4; 
+                checkHit(50); 
+            }
+        }
+
+        function checkHit(damage) {
             let targetMeshes = Object.values(remotePlayers).map(p => p.mesh);
             const intersects = raycaster.intersectObjects(targetMeshes);
-
-            if (intersects.length > 0 && isFirebaseReady) {
-                // 如果是刀，距離太遠就打不到
-                if (currentWeapon === 'knife' && intersects[0].distance >= 4) return;
-
-                const hitId = Object.keys(remotePlayers).find(id => remotePlayers[id].mesh === intersects[0].object);
-                
-                if (hitId && remotePlayers[hitId]) {
-                    // 槍扣 25 滴，刀扣 50 滴
-                    const damage = currentWeapon === 'gun' ? 25 : 50; 
-                    const currentTargetHp = remotePlayers[hitId].hp;
-                    const newHp = Math.max(0, currentTargetHp - damage); // 血量最低為 0
-                    
-                    db.ref('players/' + hitId).update({ hp: newHp });
+            if (intersects.length > 0) {
+                const hitMesh = intersects[0].object;
+                const hitId = Object.keys(remotePlayers).find(id => remotePlayers[id].mesh === hitMesh);
+                if (hitId && db) {
+                    db.ref('players/' + hitId).once('value').then(snap => {
+                        let hp = snap.val().hp;
+                        if(hp > 0) db.ref('players/' + hitId).update({ hp: Math.max(0, hp - damage) });
+                    });
                 }
-            }
-
-            if (currentWeapon === 'knife') {
-                isSlashing = true;
-                setTimeout(() => { isSlashing = false; }, 300);
             }
         }
 
-        function initFirebase() {
-            try {
-                const firebaseConfig = {
-                    apiKey: "AIzaSyD1lrv2JndZQQuWFqlMKcskEvT1sELjlno",
-                    authDomain: "gun-game-64749.firebaseapp.com",
-                    databaseURL: "https://gun-game-64749-default-rtdb.asia-southeast1.firebasedatabase.app",
-                    projectId: "gun-game-64749",
-                    storageBucket: "gun-game-64749.firebasestorage.app",
-                    messagingSenderId: "614674178389",
-                    appId: "1:614674178389:web:a86a15aa6b835b6633cfdc"
-                };
-                firebase.initializeApp(firebaseConfig);
-                db = firebase.database();
-                myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
-                myPlayerRef = db.ref('players/' + myUserId);
-                
-                myPlayerRef.onDisconnect().remove();
-                myPlayerRef.set({ x: startX, y: 1.6, z: startZ, hp: 100 });
-                isFirebaseReady = true;
-                listenToPlayers();
-            } catch (error) {
-                console.error("Firebase 錯誤:", error);
-                document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>資料庫連線失敗</span>";
-            }
+        // ==========================================
+        // 4. 動畫、物理與 UI 更新
+        // ==========================================
+        function updateCrosshair(speed) {
+            // 基礎擴散度 + 速度造成的擴散
+            let targetSpread = (speed / 10) + (canJump ? 0 : 20); 
+            
+            // 讓擴散度平滑過渡
+            crosshairSpread = THREE.MathUtils.lerp(crosshairSpread, targetSpread, 0.1);
+            
+            // 最大擴散限制
+            if(crosshairSpread > 40) crosshairSpread = 40;
+            
+            document.getElementById('ch-top').style.transform = `translateY(${-8 - crosshairSpread}px)`;
+            document.getElementById('ch-bottom').style.transform = `translateY(${8 + crosshairSpread}px)`;
+            document.getElementById('ch-left').style.transform = `translateX(${-8 - crosshairSpread}px)`;
+            document.getElementById('ch-right').style.transform = `translateX(${8 + crosshairSpread}px)`;
         }
 
         function animate() {
             requestAnimationFrame(animate);
             const time = performance.now();
 
-            if ((controls.isLocked || isMobile) && !isDead) {
-                const delta = Math.min((time - prevTime) / 1000, 0.1); 
+            if (controls.isLocked && !isDead) {
+                const delta = (time - prevTime) / 1000;
+                
+                if (currentWeapon === 'gun') {
+                    currentRecoil = THREE.MathUtils.lerp(currentRecoil, 0, 0.15);
+                    weaponContainer.position.z = -0.4 + currentRecoil; 
+                    weaponContainer.rotation.x = currentRecoil * 0.8; 
+                } else if (currentWeapon === 'knife') {
+                    if (isSwinging) {
+                        swingProgress += delta * 15; 
+                        if (swingProgress < 1) {
+                            weaponContainer.position.z = -0.3 - (Math.sin(swingProgress * Math.PI) * 0.2);
+                            weaponContainer.rotation.x = (-Math.PI / 6) - (Math.sin(swingProgress * Math.PI) * 0.5);
+                        } else {
+                            isSwinging = false;
+                            weaponContainer.position.z = -0.3;
+                            weaponContainer.rotation.x = -Math.PI / 6;
+                        }
+                    }
+                }
 
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
-                velocity.y -= 9.8 * 100.0 * delta;
+                velocity.y -= 9.8 * 60.0 * delta; 
 
-                let inputX = 0, inputY = 0;
-                if (isMobile) {
-                    inputX = joyMoveX; inputY = -joyMoveY;
-                } else {
-                    inputX = Number(moveRight) - Number(moveLeft);
-                    inputY = Number(moveForward) - Number(moveBackward);
-                }
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize();
 
-                direction.x = inputX; direction.z = inputY;
-                if (direction.lengthSq() > 1) direction.normalize();
-
-                if (direction.x !== 0) velocity.x -= direction.x * 400.0 * delta;
-                if (direction.z !== 0) velocity.z -= direction.z * 400.0 * delta;
+                if (moveForward || moveBackward) velocity.z -= direction.z * 150.0 * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * 150.0 * delta;
 
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
-
                 controls.getObject().position.y += (velocity.y * delta);
+
                 if (controls.getObject().position.y < 1.6) {
-                    velocity.y = 0; controls.getObject().position.y = 1.6; canJump = true; 
+                    velocity.y = 0;
+                    controls.getObject().position.y = 1.6;
+                    canJump = true; 
                 }
 
-                if (isFirebaseReady && (time - lastSyncTime > 50)) {
+                // 計算當前真實速度，用於更新十字準星
+                let currentSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+                updateCrosshair(currentSpeed);
+
+                if (db && (Math.abs(velocity.x) > 0.1 || Math.abs(velocity.z) > 0.1 || Math.abs(velocity.y) > 0.1)) {
                     myPlayerRef.update({
                         x: controls.getObject().position.x,
                         y: controls.getObject().position.y,
                         z: controls.getObject().position.z
                     });
-                    lastSyncTime = time;
                 }
             }
-
-            if (currentWeapon === 'gun') {
-                const targetPos = isAiming && !isMobile ? aimPosition : hipPosition;
-                gun.position.lerp(targetPos, 0.15);
-                camera.fov += ((isAiming && !isMobile ? 55 : 75) - camera.fov) * 0.15;
-            } else if (currentWeapon === 'knife') {
-                camera.fov += (75 - camera.fov) * 0.15;
-                if (isSlashing) {
-                    knife.position.lerp(new THREE.Vector3(0, -0.1, -0.6), 0.4);
-                    knife.rotation.x = THREE.MathUtils.lerp(knife.rotation.x, -0.5, 0.4);
-                } else {
-                    knife.position.lerp(hipPosition, 0.15);
-                    knife.rotation.x = THREE.MathUtils.lerp(knife.rotation.x, 0, 0.15);
-                }
-            }
-            camera.updateProjectionMatrix();
-
             prevTime = time;
             renderer.render(scene, camera);
         }
 
-        // --- 更新：處理血條變色與同步 ---
-        function listenToPlayers() {
+        // ==========================================
+        // 5. Firebase UI 更新
+        // ==========================================
+        if (db) {
             db.ref('players').on('value', (snapshot) => {
                 const playersData = snapshot.val() || {};
                 let playerCount = Object.keys(playersData).length;
-
-                document.getElementById('statusText').innerHTML =
-                    playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>準備開戰！</span>" : "等待對手...";
-
-                // 處理自己的血條 UI
+                if(!isDead) {
+                    document.getElementById('statusText').innerHTML = 
+                        playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>戰鬥開始</span>" : "等待對手加入...";
+                }
                 if (playersData[myUserId]) {
-                    const myHp = playersData[myUserId].hp;
-                    const hpBar = document.getElementById('health-bar');
-                    hpBar.style.width = myHp + '%';
+                    let hp = playersData[myUserId].hp;
+                    document.getElementById('hp-bar').style.width = hp + '%';
+                    document.getElementById('hp-bar').style.background = hp > 50 ? '#4ade80' : (hp > 25 ? '#facc15' : '#f87171');
                     
-                    // 根據血量改變液態玻璃血條的顏色
-                    if (myHp > 50) {
-                        hpBar.style.background = 'linear-gradient(90deg, rgba(74,222,128,0.85), rgba(59,130,246,0.85))';
-                    } else if (myHp > 25) {
-                        hpBar.style.background = 'linear-gradient(90deg, rgba(250,204,21,0.85), rgba(249,115,22,0.85))';
-                    } else {
-                        hpBar.style.background = 'linear-gradient(90deg, rgba(248,113,113,0.85), rgba(220,38,38,0.9))';
-                    }
-
-                    if (myHp <= 0 && !isDead) {
-                        isDead = true;
-                        if(!isMobile) controls.unlock();
-                        document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>你被擊殺了...</span>";
+                    if (hp <= 0 && !isDead) {
+                        isDead = true; controls.unlock();
+                        document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>你被擊殺了！</span>";
+                        document.getElementById('instructions').innerHTML = "<h1 style='color:#f87171'>YOU DIED</h1><p>請重新整理網頁</p>";
                     }
                 }
-
                 Object.keys(playersData).forEach(id => {
                     if (id === myUserId) return;
                     const data = playersData[id];
-
                     if (data.hp <= 0 && remotePlayers[id]) {
-                        scene.remove(remotePlayers[id].mesh); 
-                        delete remotePlayers[id];
-                        document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>勝負已分：你贏了！</span>";
+                        scene.remove(remotePlayers[id].mesh); delete remotePlayers[id];
+                        if(!isDead) document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>擊殺敵人！</span>";
                         return;
                     }
-
-                    if (!remotePlayers[id] && data.hp > 0) {
-                        const geo = new THREE.BoxGeometry(1, 2, 1);
-                        const mat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
-                        const mesh = new THREE.Mesh(geo, mat);
-                        scene.add(mesh);
-                        remotePlayers[id] = { mesh: mesh, hp: data.hp };
-                    }
-                    if (remotePlayers[id] && data.hp > 0) {
+                    if (data.hp > 0) {
+                        if (!remotePlayers[id]) {
+                            const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshStandardMaterial({ color: 0xff4444, metalness: 0.3, roughness: 0.5 }));
+                            scene.add(mesh); remotePlayers[id] = { mesh: mesh };
+                        }
                         remotePlayers[id].mesh.position.set(data.x, data.y, data.z);
-                        remotePlayers[id].hp = data.hp; // 隨時更新對手血量資料
                     }
                 });
-
                 Object.keys(remotePlayers).forEach(id => {
                     if (!playersData[id]) { scene.remove(remotePlayers[id].mesh); delete remotePlayers[id]; }
                 });
