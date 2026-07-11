@@ -11,7 +11,7 @@
             border-radius: 50%; transform: translate(-50%, -50%);
             box-shadow: 0 0 4px rgba(0,0,0,0.5); pointer-events: none; z-index: 10;
         }
-        /* 極簡液態玻璃 UI：強調高透光與邊緣折射 */
+        /* 極簡液態玻璃 UI */
         #ui-panel {
             position: absolute; top: 20px; left: 20px; padding: 20px 30px;
             background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0));
@@ -47,7 +47,7 @@
     <div id="crosshair"></div>
     <div id="ui-panel">
         <h3 style="margin:0 0 10px 0; font-weight: 500;">連線狀態</h3>
-        <div id="statusText">正在連線至 Firebase...</div>
+        <div id="statusText">載入中...</div>
     </div>
     <div id="instructions">
         <h1 style="font-weight: 300;">點擊畫面開始</h1>
@@ -59,30 +59,7 @@
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         // ==========================================
-        // 1. Firebase 初始化與設定
-        // ==========================================
-        const firebaseConfig = {
-            apiKey: "請換成你的_API_KEY",
-            authDomain: "請換成你的_PROJECT_ID.firebaseapp.com",
-            databaseURL: "請換成你的_DATABASE_URL", 
-            projectId: "請換成你的_PROJECT_ID",
-            storageBucket: "請換成你的_PROJECT_ID.appspot.com",
-            messagingSenderId: "請換成你的_SENDER_ID",
-            appId: "請換成你的_APP_ID"
-        };
-        
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
-
-        // 產生隨機 User ID
-        const myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
-        const myPlayerRef = db.ref('players/' + myUserId);
-        
-        myPlayerRef.onDisconnect().remove();
-        myPlayerRef.set({ x: 0, y: 1.6, z: 0, hp: 100 });
-
-        // ==========================================
-        // 2. Three.js 場景設定與全域變數
+        // 1. 全域變數與 3D 核心
         // ==========================================
         let camera, scene, renderer, controls;
         let remotePlayers = {};
@@ -93,15 +70,24 @@
         const raycaster = new THREE.Raycaster();
         let isDead = false;
 
-        // 瞄準系統變數
         let gun;
         let isAiming = false;
         const hipPosition = new THREE.Vector3(0.2, -0.2, -0.4);
         const aimPosition = new THREE.Vector3(0, -0.08, -0.3);
 
+        let db = null;
+        let myPlayerRef = null;
+        let myUserId = null;
+        let isFirebaseReady = false;
+
+        // 確保 3D 畫面優先載入，不受網路影響
         init3D();
         animate();
+        initFirebase();
 
+        // ==========================================
+        // 2. Three.js 場景設定 (保證畫面能點擊)
+        // ==========================================
         function init3D() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x1a1a1a);
@@ -109,19 +95,18 @@
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.y = 1.6;
 
-            // --- 新增：純淨液態玻璃質感的槍枝 ---
+            // 純淨液態玻璃槍枝
             const gunGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5);
             const gunMaterial = new THREE.MeshPhysicalMaterial({
-                transmission: 1.0,  // 極致透光
-                roughness: 0.02,    // 表面極度光滑
-                ior: 1.5,           // 光線折射率
+                transmission: 1.0,
+                roughness: 0.02,
+                ior: 1.5,
                 thickness: 0.5,
                 color: 0xeeeeee,
                 transparent: true
             });
             gun = new THREE.Mesh(gunGeometry, gunMaterial);
-            
-            gun.position.copy(hipPosition); // 初始設定在腰際位置
+            gun.position.copy(hipPosition);
             camera.add(gun);
             scene.add(camera);
 
@@ -146,7 +131,6 @@
             controls.addEventListener('unlock', () => instructions.style.display = 'flex');
             scene.add(controls.getObject());
 
-            // 鍵盤移動監聽
             document.addEventListener('keydown', (e) => {
                 switch (e.code) {
                     case 'KeyW': moveForward = true; break;
@@ -164,17 +148,16 @@
                 }
             });
 
-            // --- 新增：阻擋右鍵選單與射擊/瞄準操作 ---
             document.addEventListener('contextmenu', e => e.preventDefault());
 
             document.addEventListener('mousedown', (e) => {
                 if (!controls.isLocked || isDead) return;
-                if (e.button === 0) shoot();         // 左鍵射擊
-                if (e.button === 2) isAiming = true; // 右鍵瞄準
+                if (e.button === 0) shoot();
+                if (e.button === 2) isAiming = true;
             });
 
             document.addEventListener('mouseup', (e) => {
-                if (e.button === 2) isAiming = false; // 放開右鍵取消瞄準
+                if (e.button === 2) isAiming = false;
             });
 
             window.addEventListener('resize', () => {
@@ -185,14 +168,48 @@
         }
 
         // ==========================================
-        // 3. 核心邏輯：射擊判定與連線同步
+        // 3. 防呆 Firebase 初始化 (錯誤攔截)
+        // ==========================================
+        function initFirebase() {
+            try {
+                // ⚠️ 這裡請換成你後台真正的設定 ⚠️
+                const firebaseConfig = {
+                    apiKey: "請換成你的_API_KEY",
+                    authDomain: "請換成你的_PROJECT_ID.firebaseapp.com",
+                    databaseURL: "請換成你的_DATABASE_URL", 
+                    projectId: "請換成你的_PROJECT_ID",
+                    storageBucket: "請換成你的_PROJECT_ID.appspot.com",
+                    messagingSenderId: "請換成你的_SENDER_ID",
+                    appId: "請換成你的_APP_ID"
+                };
+                
+                firebase.initializeApp(firebaseConfig);
+                db = firebase.database();
+
+                myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
+                myPlayerRef = db.ref('players/' + myUserId);
+                
+                myPlayerRef.onDisconnect().remove();
+                myPlayerRef.set({ x: 0, y: 1.6, z: 0, hp: 100 });
+
+                isFirebaseReady = true;
+                listenToPlayers();
+            } catch (error) {
+                console.error("Firebase 錯誤:", error);
+                document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>資料庫未連線：金鑰設定錯誤</span>";
+                alert("Firebase 設定出錯了！請檢查程式碼裡的 firebaseConfig。\n錯誤訊息：" + error.message);
+            }
+        }
+
+        // ==========================================
+        // 4. 核心邏輯與動畫迴圈
         // ==========================================
         function shoot() {
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             let targetMeshes = Object.values(remotePlayers).map(p => p.mesh);
             const intersects = raycaster.intersectObjects(targetMeshes);
 
-            if (intersects.length > 0) {
+            if (intersects.length > 0 && isFirebaseReady) {
                 const hitMesh = intersects[0].object;
                 const hitId = Object.keys(remotePlayers).find(id => remotePlayers[id].mesh === hitMesh);
                 
@@ -221,7 +238,7 @@
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
 
-                if (velocity.x !== 0 || velocity.z !== 0) {
+                if ((velocity.x !== 0 || velocity.z !== 0) && isFirebaseReady) {
                     myPlayerRef.update({
                         x: controls.getObject().position.x,
                         y: controls.getObject().position.y,
@@ -230,13 +247,12 @@
                 }
             }
             
-            // --- 新增：槍枝瞄準動畫與視角縮放 ---
             if (gun) {
                 const targetPos = isAiming ? aimPosition : hipPosition;
-                gun.position.lerp(targetPos, 0.15); // 平滑移動
+                gun.position.lerp(targetPos, 0.15);
 
                 const targetFOV = isAiming ? 55 : 75;
-                camera.fov += (targetFOV - camera.fov) * 0.15; // 平滑縮放
+                camera.fov += (targetFOV - camera.fov) * 0.15;
                 camera.updateProjectionMatrix();
             }
 
@@ -245,53 +261,55 @@
         }
 
         // ==========================================
-        // 4. Firebase 資料庫監聽 (畫出對手與判定生死)
+        // 5. 資料庫同步
         // ==========================================
-        db.ref('players').on('value', (snapshot) => {
-            const playersData = snapshot.val() || {};
-            let playerCount = Object.keys(playersData).length;
-            
-            document.getElementById('statusText').innerHTML = 
-                playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>準備開火！</span>" : "等待對手...";
-
-            if (playersData[myUserId] && playersData[myUserId].hp <= 0 && !isDead) {
-                isDead = true;
-                controls.unlock();
-                document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>你被擊殺了...</span>";
-            }
-
-            Object.keys(playersData).forEach(id => {
-                if (id === myUserId) return;
-
-                const data = playersData[id];
+        function listenToPlayers() {
+            db.ref('players').on('value', (snapshot) => {
+                const playersData = snapshot.val() || {};
+                let playerCount = Object.keys(playersData).length;
                 
-                if (data.hp <= 0 && remotePlayers[id]) {
-                    scene.remove(remotePlayers[id].mesh);
-                    delete remotePlayers[id];
-                    document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>勝負已分：你贏了！</span>";
-                    return;
+                document.getElementById('statusText').innerHTML = 
+                    playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>準備開火！</span>" : "等待對手...";
+
+                if (playersData[myUserId] && playersData[myUserId].hp <= 0 && !isDead) {
+                    isDead = true;
+                    controls.unlock();
+                    document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>你被擊殺了...</span>";
                 }
 
-                if (!remotePlayers[id] && data.hp > 0) {
-                    const geo = new THREE.BoxGeometry(1, 2, 1);
-                    const mat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
-                    const mesh = new THREE.Mesh(geo, mat);
-                    scene.add(mesh);
-                    remotePlayers[id] = { mesh: mesh };
-                }
+                Object.keys(playersData).forEach(id => {
+                    if (id === myUserId) return;
 
-                if (remotePlayers[id] && data.hp > 0) {
-                    remotePlayers[id].mesh.position.set(data.x, data.y, data.z);
-                }
+                    const data = playersData[id];
+                    
+                    if (data.hp <= 0 && remotePlayers[id]) {
+                        scene.remove(remotePlayers[id].mesh);
+                        delete remotePlayers[id];
+                        document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>勝負已分：你贏了！</span>";
+                        return;
+                    }
+
+                    if (!remotePlayers[id] && data.hp > 0) {
+                        const geo = new THREE.BoxGeometry(1, 2, 1);
+                        const mat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
+                        const mesh = new THREE.Mesh(geo, mat);
+                        scene.add(mesh);
+                        remotePlayers[id] = { mesh: mesh };
+                    }
+
+                    if (remotePlayers[id] && data.hp > 0) {
+                        remotePlayers[id].mesh.position.set(data.x, data.y, data.z);
+                    }
+                });
+
+                Object.keys(remotePlayers).forEach(id => {
+                    if (!playersData[id]) {
+                        scene.remove(remotePlayers[id].mesh);
+                        delete remotePlayers[id];
+                    }
+                });
             });
-
-            Object.keys(remotePlayers).forEach(id => {
-                if (!playersData[id]) {
-                    scene.remove(remotePlayers[id].mesh);
-                    delete remotePlayers[id];
-                }
-            });
-        });
+        }
     </script>
 </body>
 </html>
