@@ -66,7 +66,7 @@
 
         /* 冷卻環形進度：包一層 wrapper，用 conic-gradient 遮罩畫圓環，
            數值透過 JS 更新 CSS 變數 --cd (0~360deg，代表已冷卻的角度) */
-        .cd-wrapper { position: absolute; pointer-events: auto; }
+        .cd-wrapper { position: absolute; pointer-events: auto; z-index: 60; }
         .cd-ring {
             position: absolute; top: -4px; left: -4px; right: -4px; bottom: -4px;
             border-radius: 50%; pointer-events: none;
