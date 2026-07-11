@@ -2,45 +2,32 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Firebase 3D FPS - 高質感武器版</title>
+    <title>Firebase 3D FPS</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
         #crosshair {
             position: absolute; top: 50%; left: 50%;
             width: 4px; height: 4px; background: white;
             border-radius: 50%; transform: translate(-50%, -50%);
-            box-shadow: 0 0 4px rgba(0,0,0,0.8); pointer-events: none; z-index: 10;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5); pointer-events: none; z-index: 10;
         }
-        /* 極簡液態玻璃 UI */
+        /* 極簡液態玻璃 UI：強調高透光與邊緣折射 */
         #ui-panel {
             position: absolute; top: 20px; left: 20px; padding: 20px 30px;
             background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0));
-            backdrop-filter: blur(4px) brightness(1.15) contrast(1.1);
+            backdrop-filter: brightness(1.15) contrast(1.1);
             border-top: 1px solid rgba(255,255,255,0.4);
             border-left: 1px solid rgba(255,255,255,0.3);
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
             border-radius: 12px;
             color: #fff; font-family: sans-serif;
-            pointer-events: none; z-index: 10; min-width: 200px;
+            pointer-events: none; z-index: 10;
         }
-        #hp-container {
-            width: 100%; height: 8px; background: rgba(255,255,255,0.1);
-            border-radius: 4px; margin-top: 15px; overflow: hidden;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
-        }
-        #hp-bar {
-            width: 100%; height: 100%; background: #4ade80;
-            transition: width 0.3s ease, background-color 0.3s ease;
-        }
-        
         #instructions {
             position: absolute; width: 100%; height: 100%;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
             background-color: rgba(0,0,0,0.8); color: white; z-index: 20; cursor: pointer;
             font-family: sans-serif;
-        }
-        .key-hint {
-            color: #4ade80; font-weight: bold; padding: 0 5px;
         }
     </style>
     
@@ -59,20 +46,12 @@
 <body>
     <div id="crosshair"></div>
     <div id="ui-panel">
-        <h3 style="margin:0 0 10px 0; font-weight: 500; font-size: 16px;">連線狀態</h3>
-        <div id="statusText" style="font-size: 14px; margin-bottom: 10px;">系統初始化中...</div>
-        <div style="font-size: 12px; color: #ccc;">生命值 (HP)</div>
-        <div id="hp-container"><div id="hp-bar"></div></div>
-        <div style="margin-top: 15px; font-size: 12px; color: #ccc;">
-            當前武器：<span id="weaponText" style="color: #fff; font-weight: bold;">突擊步槍</span>
-        </div>
+        <h3 style="margin:0 0 10px 0; font-weight: 500;">連線狀態</h3>
+        <div id="statusText">正在連線至 Firebase...</div>
     </div>
     <div id="instructions">
-        <h1 style="font-weight: 300; letter-spacing: 2px;">點擊畫面開始</h1>
-        <p style="color: #bbb; margin-top: 20px;">
-            WASD 移動 | 空白鍵 跳躍 | 左鍵 攻擊<br><br>
-            按 <span class="key-hint">1</span> 裝備步槍 | 按 <span class="key-hint">2</span> 裝備戰術刀
-        </p>
+        <h1 style="font-weight: 300;">點擊畫面開始</h1>
+        <p style="color: #aaa;">WASD 移動 | 左鍵射擊 | 右鍵瞄準</p>
     </div>
 
     <script type="module">
@@ -80,164 +59,81 @@
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         // ==========================================
-        // 1. Firebase 初始化
+        // 1. Firebase 初始化與設定
         // ==========================================
         const firebaseConfig = {
-            apiKey: "AIzaSyD1lrv2JndZQQuWFqlMKcskEvT1sELjlno",
-            authDomain: "gun-game-64749.firebaseapp.com",
-            databaseURL: "https://gun-game-64749-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "gun-game-64749",
-            storageBucket: "gun-game-64749.firebasestorage.app",
-            messagingSenderId: "614674178389",
-            appId: "1:614674178389:web:a86a15aa6b835b6633cfdc",
-            measurementId: "G-YJ4WRL03ZX"
+            apiKey: "請換成你的_API_KEY",
+            authDomain: "請換成你的_PROJECT_ID.firebaseapp.com",
+            databaseURL: "請換成你的_DATABASE_URL", 
+            projectId: "請換成你的_PROJECT_ID",
+            storageBucket: "請換成你的_PROJECT_ID.appspot.com",
+            messagingSenderId: "請換成你的_SENDER_ID",
+            appId: "請換成你的_APP_ID"
         };
+        
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
 
-        let db = null, myUserId = null, myPlayerRef = null;
-
-        try {
-            firebase.initializeApp(firebaseConfig);
-            db = firebase.database();
-            myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
-            myPlayerRef = db.ref('players/' + myUserId);
-            myPlayerRef.onDisconnect().remove();
-            myPlayerRef.set({ x: 0, y: 1.6, z: 0, hp: 100 });
-            document.getElementById('statusText').innerHTML = "連線成功";
-        } catch (error) {
-            console.warn("⚠️ 啟動離線測試模式");
-            document.getElementById('statusText').innerHTML = "<span style='color:#fbd38d;'>離線測試模式</span>";
-        }
+        // 產生隨機 User ID
+        const myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
+        const myPlayerRef = db.ref('players/' + myUserId);
+        
+        myPlayerRef.onDisconnect().remove();
+        myPlayerRef.set({ x: 0, y: 1.6, z: 0, hp: 100 });
 
         // ==========================================
-        // 2. Three.js 場景與變數
+        // 2. Three.js 場景設定與全域變數
         // ==========================================
         let camera, scene, renderer, controls;
         let remotePlayers = {};
-        
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
         let prevTime = performance.now();
         const raycaster = new THREE.Raycaster();
         let isDead = false;
 
-        // 武器系統變數
-        let weaponContainer = new THREE.Group();
-        let gunGroup, knifeGroup;
-        let currentWeapon = 'gun'; // 'gun' or 'knife'
-        
-        // 動畫變數
-        let currentRecoil = 0; 
-        let isSwinging = false;
-        let swingProgress = 0;
+        // 瞄準系統變數
+        let gun;
+        let isAiming = false;
+        const hipPosition = new THREE.Vector3(0.2, -0.2, -0.4);
+        const aimPosition = new THREE.Vector3(0, -0.08, -0.3);
 
         init3D();
         animate();
 
         function init3D() {
             scene = new THREE.Scene();
-            // 調亮背景色
-            scene.background = new THREE.Color(0x222222);
-            scene.fog = new THREE.FogExp2(0x222222, 0.015); 
+            scene.background = new THREE.Color(0x1a1a1a);
             
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.y = 1.6;
 
-            // --- 重大升級：高質感光影系統 ---
-            // 1. 環境光：讓暗部不要死黑
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-            scene.add(ambientLight);
+            // --- 新增：純淨液態玻璃質感的槍枝 ---
+            const gunGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5);
+            const gunMaterial = new THREE.MeshPhysicalMaterial({
+                transmission: 1.0,  // 極致透光
+                roughness: 0.02,    // 表面極度光滑
+                ior: 1.5,           // 光線折射率
+                thickness: 0.5,
+                color: 0xeeeeee,
+                transparent: true
+            });
+            gun = new THREE.Mesh(gunGeometry, gunMaterial);
             
-            // 2. 天球光：模擬天空與地面的漫反射
-            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444455, 0.6);
-            scene.add(hemiLight);
+            gun.position.copy(hipPosition); // 初始設定在腰際位置
+            camera.add(gun);
+            scene.add(camera);
 
-            // 3. 方向光：提供強烈的高光反射與立體感 (對金屬材質最重要)
-            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-            dirLight.position.set(10, 20, 10);
-            scene.add(dirLight);
+            const light = new THREE.HemisphereLight(0xeeeeff, 0x777788, 1);
+            scene.add(light);
 
-            // 地板與障礙物 (稍微調亮以便看清楚)
-            const floorGeometry = new THREE.PlaneGeometry(200, 200, 40, 40);
-            const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8, metalness: 0.2 });
+            const floorGeometry = new THREE.PlaneGeometry(100, 100, 20, 20);
+            const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x444444, wireframe: true });
             const floor = new THREE.Mesh(floorGeometry, floorMaterial);
             floor.rotation.x = -Math.PI / 2;
             scene.add(floor);
 
-            const boxGeo = new THREE.BoxGeometry(2, 2, 2);
-            const boxMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.7 });
-            for(let i=0; i<15; i++) {
-                let box = new THREE.Mesh(boxGeo, boxMat);
-                box.position.set((Math.random() - 0.5) * 60, 1, (Math.random() - 0.5) * 60);
-                scene.add(box);
-            }
-
-            // ==========================================
-            // 打造高質感武器模型
-            // ==========================================
-            
-            // 【 武器 1：高科技步槍 (Gun) 】
-            gunGroup = new THREE.Group();
-            
-            // 槍身 (消光深灰金屬)
-            const gunBodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.7, roughness: 0.4 });
-            const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.45), gunBodyMat);
-            gunGroup.add(gunBody);
-
-            // 槍管 (高反光銀色金屬)
-            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.9, roughness: 0.2 });
-            const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.3, 16), barrelMat);
-            barrel.rotation.x = Math.PI / 2;
-            barrel.position.set(0, 0.03, -0.35);
-            gunGroup.add(barrel);
-            
-            // 瞄準鏡發光點 (Neon Blue)
-            const sightMat = new THREE.MeshStandardMaterial({ color: 0x00aaff, emissive: 0x00aaff, emissiveIntensity: 2 });
-            const sight = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.04), sightMat);
-            sight.position.set(0, 0.07, -0.1);
-            gunGroup.add(sight);
-
-            // 【 武器 2：戰術小刀 (Knife) 】
-            knifeGroup = new THREE.Group();
-            
-            // 刀刃 (超高質感物理材質：極高反光、像鏡面一樣的鋼)
-            const bladeMat = new THREE.MeshPhysicalMaterial({ 
-                color: 0xdddddd, metalness: 1.0, roughness: 0.1, 
-                clearcoat: 1.0, clearcoatRoughness: 0.1 
-            });
-            // 用壓扁的盒子模擬刀刃形狀
-            const blade = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.06, 0.35), bladeMat);
-            blade.position.set(0, 0, -0.2);
-            // 把刀尖削尖
-            blade.geometry.attributes.position.setY(0, 0.01); 
-            blade.geometry.attributes.position.setY(1, 0.01);
-            knifeGroup.add(blade);
-
-            // 刀柄 (黑色粗糙防滑橡膠)
-            const handleMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9, metalness: 0.1 });
-            const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.15, 8), handleMat);
-            handle.rotation.x = Math.PI / 2;
-            handle.position.set(0, 0, 0.05);
-            knifeGroup.add(handle);
-            
-            // 護手 (深色金屬)
-            const guard = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.02), gunBodyMat);
-            guard.position.set(0, 0, -0.03);
-            knifeGroup.add(guard);
-
-            // 將武器放入容器並掛載到攝影機
-            weaponContainer.add(gunGroup);
-            weaponContainer.add(knifeGroup);
-            
-            // 預設武器位置 (畫面右下角)
-            weaponContainer.position.set(0.25, -0.25, -0.4);
-            camera.add(weaponContainer);
-            scene.add(camera);
-            
-            // 初始設定顯示槍，隱藏刀
-            switchWeapon('gun');
-
-            // --- 渲染器與控制 ---
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
@@ -250,16 +146,13 @@
             controls.addEventListener('unlock', () => instructions.style.display = 'flex');
             scene.add(controls.getObject());
 
-            // --- 按鍵監聽 (包含武器切換 1 和 2) ---
+            // 鍵盤移動監聽
             document.addEventListener('keydown', (e) => {
                 switch (e.code) {
                     case 'KeyW': moveForward = true; break;
                     case 'KeyA': moveLeft = true; break;
                     case 'KeyS': moveBackward = true; break;
                     case 'KeyD': moveRight = true; break;
-                    case 'Space': if (canJump === true && !isDead) velocity.y += 120; canJump = false; break;
-                    case 'Digit1': switchWeapon('gun'); break;
-                    case 'Digit2': switchWeapon('knife'); break;
                 }
             });
             document.addEventListener('keyup', (e) => {
@@ -271,9 +164,17 @@
                 }
             });
 
-            // 左鍵攻擊
+            // --- 新增：阻擋右鍵選單與射擊/瞄準操作 ---
+            document.addEventListener('contextmenu', e => e.preventDefault());
+
             document.addEventListener('mousedown', (e) => {
-                if (controls.isLocked && e.button === 0 && !isDead) attack();
+                if (!controls.isLocked || isDead) return;
+                if (e.button === 0) shoot();         // 左鍵射擊
+                if (e.button === 2) isAiming = true; // 右鍵瞄準
+            });
+
+            document.addEventListener('mouseup', (e) => {
+                if (e.button === 2) isAiming = false; // 放開右鍵取消瞄準
             });
 
             window.addEventListener('resize', () => {
@@ -283,51 +184,11 @@
             });
         }
 
-        // 切換武器邏輯
-        function switchWeapon(type) {
-            currentWeapon = type;
-            if (type === 'gun') {
-                gunGroup.visible = true;
-                knifeGroup.visible = false;
-                document.getElementById('weaponText').innerText = "突擊步槍";
-                weaponContainer.position.set(0.25, -0.25, -0.4);
-                weaponContainer.rotation.set(0, 0, 0); // 重置旋轉
-            } else if (type === 'knife') {
-                gunGroup.visible = false;
-                knifeGroup.visible = true;
-                document.getElementById('weaponText').innerText = "戰術小刀";
-                // 拿刀的姿勢稍微往前一點、往中間一點
-                weaponContainer.position.set(0.15, -0.2, -0.3);
-                // 讓刀稍微朝前傾斜
-                weaponContainer.rotation.set(-Math.PI / 6, Math.PI / 8, 0); 
-            }
-        }
-
         // ==========================================
-        // 3. 攻擊邏輯 (槍與刀不同)
+        // 3. 核心邏輯：射擊判定與連線同步
         // ==========================================
-        function attack() {
-            if (currentWeapon === 'gun') {
-                // 【開槍邏輯】
-                currentRecoil = 0.15; // 觸發後座力
-                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-                raycaster.far = 1000; // 槍的射程無限遠
-                checkHit(25); // 扣 25 滴血
-                
-            } else if (currentWeapon === 'knife') {
-                // 【揮刀邏輯】
-                if(isSwinging) return; // 避免連按狂抽搐
-                isSwinging = true;
-                swingProgress = 0;
-                
-                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-                raycaster.far = 4; // 刀的射程超級短 (只有近距離才砍得到)
-                checkHit(40); // 刀比較痛，一刀 40 滴血
-            }
-        }
-
-        // 判定是否擊中敵人
-        function checkHit(damage) {
+        function shoot() {
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             let targetMeshes = Object.values(remotePlayers).map(p => p.mesh);
             const intersects = raycaster.intersectObjects(targetMeshes);
 
@@ -335,18 +196,12 @@
                 const hitMesh = intersects[0].object;
                 const hitId = Object.keys(remotePlayers).find(id => remotePlayers[id].mesh === hitMesh);
                 
-                if (hitId && db) {
-                    db.ref('players/' + hitId).once('value').then(snap => {
-                        let hp = snap.val().hp;
-                        if(hp > 0) db.ref('players/' + hitId).update({ hp: Math.max(0, hp - damage) });
-                    });
+                if (hitId) {
+                    db.ref('players/' + hitId).update({ hp: 0 });
                 }
             }
         }
 
-        // ==========================================
-        // 4. 動畫與物理計算
-        // ==========================================
         function animate() {
             requestAnimationFrame(animate);
             const time = performance.now();
@@ -354,53 +209,19 @@
             if (controls.isLocked && !isDead) {
                 const delta = (time - prevTime) / 1000;
                 
-                // --- 武器動畫系統 ---
-                if (currentWeapon === 'gun') {
-                    // 步槍後座力平滑回正
-                    currentRecoil = THREE.MathUtils.lerp(currentRecoil, 0, 0.15);
-                    weaponContainer.position.z = -0.4 + currentRecoil; 
-                    weaponContainer.rotation.x = currentRecoil * 0.8; 
-                } else if (currentWeapon === 'knife') {
-                    // 戰術刀刺擊/揮砍動畫
-                    if (isSwinging) {
-                        swingProgress += delta * 15; // 揮刀速度
-                        if (swingProgress < 1) {
-                            // 往前刺並往下揮
-                            weaponContainer.position.z = -0.3 - (Math.sin(swingProgress * Math.PI) * 0.2);
-                            weaponContainer.rotation.x = (-Math.PI / 6) - (Math.sin(swingProgress * Math.PI) * 0.5);
-                        } else {
-                            // 動畫結束，回正
-                            isSwinging = false;
-                            weaponContainer.position.z = -0.3;
-                            weaponContainer.rotation.x = -Math.PI / 6;
-                        }
-                    }
-                }
-
-                // --- 角色物理移動 ---
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
-                velocity.y -= 9.8 * 60.0 * delta; 
-
                 direction.z = Number(moveForward) - Number(moveBackward);
                 direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
 
-                if (moveForward || moveBackward) velocity.z -= direction.z * 150.0 * delta;
-                if (moveLeft || moveRight) velocity.x -= direction.x * 150.0 * delta;
+                if (moveForward || moveBackward) velocity.z -= direction.z * 400.0 * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta;
 
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
-                
-                controls.getObject().position.y += (velocity.y * delta);
 
-                if (controls.getObject().position.y < 1.6) {
-                    velocity.y = 0;
-                    controls.getObject().position.y = 1.6;
-                    canJump = true; 
-                }
-
-                if (db && (Math.abs(velocity.x) > 0.1 || Math.abs(velocity.z) > 0.1 || Math.abs(velocity.y) > 0.1)) {
+                if (velocity.x !== 0 || velocity.z !== 0) {
                     myPlayerRef.update({
                         x: controls.getObject().position.x,
                         y: controls.getObject().position.y,
@@ -408,74 +229,69 @@
                     });
                 }
             }
+            
+            // --- 新增：槍枝瞄準動畫與視角縮放 ---
+            if (gun) {
+                const targetPos = isAiming ? aimPosition : hipPosition;
+                gun.position.lerp(targetPos, 0.15); // 平滑移動
+
+                const targetFOV = isAiming ? 55 : 75;
+                camera.fov += (targetFOV - camera.fov) * 0.15; // 平滑縮放
+                camera.updateProjectionMatrix();
+            }
+
             prevTime = time;
             renderer.render(scene, camera);
         }
 
         // ==========================================
-        // 5. Firebase 資料庫監聽與 UI 更新
+        // 4. Firebase 資料庫監聽 (畫出對手與判定生死)
         // ==========================================
-        function updateUI(hp) {
-            const hpBar = document.getElementById('hp-bar');
-            hpBar.style.width = hp + '%';
-            if (hp > 50) hpBar.style.background = '#4ade80';
-            else if (hp > 25) hpBar.style.background = '#facc15';
-            else hpBar.style.background = '#f87171';
-        }
+        db.ref('players').on('value', (snapshot) => {
+            const playersData = snapshot.val() || {};
+            let playerCount = Object.keys(playersData).length;
+            
+            document.getElementById('statusText').innerHTML = 
+                playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>準備開火！</span>" : "等待對手...";
 
-        if (db) {
-            db.ref('players').on('value', (snapshot) => {
-                const playersData = snapshot.val() || {};
-                let playerCount = Object.keys(playersData).length;
+            if (playersData[myUserId] && playersData[myUserId].hp <= 0 && !isDead) {
+                isDead = true;
+                controls.unlock();
+                document.getElementById('statusText').innerHTML = "<span style='color:#f87171;'>你被擊殺了...</span>";
+            }
+
+            Object.keys(playersData).forEach(id => {
+                if (id === myUserId) return;
+
+                const data = playersData[id];
                 
-                if(!isDead) {
-                    document.getElementById('statusText').innerHTML = 
-                        playerCount >= 2 ? "對手已連線，<span style='color:#4ade80'>戰鬥開始</span>" : "等待對手加入...";
+                if (data.hp <= 0 && remotePlayers[id]) {
+                    scene.remove(remotePlayers[id].mesh);
+                    delete remotePlayers[id];
+                    document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>勝負已分：你贏了！</span>";
+                    return;
                 }
 
-                if (playersData[myUserId]) {
-                    let myHp = playersData[myUserId].hp;
-                    updateUI(myHp);
-                    
-                    if (myHp <= 0 && !isDead) {
-                        isDead = true;
-                        controls.unlock();
-                        document.getElementById('statusText').innerHTML = "<span style='color:#f87171; font-weight:bold;'>你被擊殺了！</span>";
-                        document.getElementById('instructions').innerHTML = "<h1 style='color:#f87171'>YOU DIED</h1><p>請重新整理網頁復活</p>";
-                    }
+                if (!remotePlayers[id] && data.hp > 0) {
+                    const geo = new THREE.BoxGeometry(1, 2, 1);
+                    const mat = new THREE.MeshPhongMaterial({ color: 0xff4444 });
+                    const mesh = new THREE.Mesh(geo, mat);
+                    scene.add(mesh);
+                    remotePlayers[id] = { mesh: mesh };
                 }
 
-                Object.keys(playersData).forEach(id => {
-                    if (id === myUserId) return;
-                    const data = playersData[id];
-                    
-                    if (data.hp <= 0 && remotePlayers[id]) {
-                        scene.remove(remotePlayers[id].mesh);
-                        delete remotePlayers[id];
-                        if(!isDead) document.getElementById('statusText').innerHTML = "<span style='color:#4ade80;'>擊殺敵人！</span>";
-                        return;
-                    }
-
-                    if (data.hp > 0) {
-                        if (!remotePlayers[id]) {
-                            const geo = new THREE.BoxGeometry(1, 2, 1);
-                            const mat = new THREE.MeshStandardMaterial({ color: 0xff4444, metalness: 0.3, roughness: 0.5 });
-                            const mesh = new THREE.Mesh(geo, mat);
-                            scene.add(mesh);
-                            remotePlayers[id] = { mesh: mesh };
-                        }
-                        remotePlayers[id].mesh.position.set(data.x, data.y, data.z);
-                    }
-                });
-
-                Object.keys(remotePlayers).forEach(id => {
-                    if (!playersData[id]) {
-                        scene.remove(remotePlayers[id].mesh);
-                        delete remotePlayers[id];
-                    }
-                });
+                if (remotePlayers[id] && data.hp > 0) {
+                    remotePlayers[id].mesh.position.set(data.x, data.y, data.z);
+                }
             });
-        }
+
+            Object.keys(remotePlayers).forEach(id => {
+                if (!playersData[id]) {
+                    scene.remove(remotePlayers[id].mesh);
+                    delete remotePlayers[id];
+                }
+            });
+        });
     </script>
 </body>
 </html>
