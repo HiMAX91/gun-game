@@ -58,7 +58,9 @@
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
-        // 全域變數
+        // ==========================================
+        // 1. 全域變數
+        // ==========================================
         let camera, scene, renderer, controls;
         let remotePlayers = {};
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false;
@@ -85,6 +87,9 @@
         animate();
         initFirebase();
 
+        // ==========================================
+        // 2. 3D 場景設定
+        // ==========================================
         function init3D() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x1a1a1a);
@@ -92,7 +97,7 @@
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.y = 1.6;
 
-            // 建立純淨液態玻璃槍枝
+            // --- 液態玻璃槍枝 ---
             const gunGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5);
             const gunMaterial = new THREE.MeshPhysicalMaterial({
                 transmission: 1.0,
@@ -110,11 +115,26 @@
             const light = new THREE.HemisphereLight(0xeeeeff, 0x777788, 1);
             scene.add(light);
 
-            const floorGeometry = new THREE.PlaneGeometry(100, 100, 20, 20);
-            const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x444444, wireframe: true });
-            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-            floor.rotation.x = -Math.PI / 2;
-            scene.add(floor);
+            // --- 新增：超明顯的高對比網格地板 ---
+            const gridHelper = new THREE.GridHelper(100, 50, 0xffffff, 0x333333);
+            scene.add(gridHelper);
+
+            // --- 新增：隨機生成 15 個高透光玻璃障礙物 ---
+            const obstacleGeo = new THREE.BoxGeometry(4, 4, 4);
+            const obstacleMat = new THREE.MeshPhysicalMaterial({ 
+                color: 0xeeeeee, 
+                transmission: 0.9, 
+                ior: 1.5,
+                transparent: true,
+                roughness: 0.1 
+            });
+            
+            for(let i = 0; i < 15; i++) {
+                const box = new THREE.Mesh(obstacleGeo, obstacleMat);
+                // 隨機散佈在周圍
+                box.position.set((Math.random() - 0.5) * 60, 2, (Math.random() - 0.5) * 60);
+                scene.add(box);
+            }
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -168,9 +188,11 @@
             });
         }
 
+        // ==========================================
+        // 3. Firebase 初始化 (直接套用你的金鑰)
+        // ==========================================
         function initFirebase() {
             try {
-                // 你的真實專案金鑰
                 const firebaseConfig = {
                     apiKey: "AIzaSyD1lrv2JndZQQuWFqlMKcskEvT1sELjlno",
                     authDomain: "gun-game-64749.firebaseapp.com",
@@ -198,6 +220,9 @@
             }
         }
 
+        // ==========================================
+        // 4. 動畫迴圈與射擊邏輯
+        // ==========================================
         function shoot() {
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             let targetMeshes = Object.values(remotePlayers).map(p => p.mesh);
@@ -239,7 +264,7 @@
                 if (controls.getObject().position.y < 1.6) {
                     velocity.y = 0;
                     controls.getObject().position.y = 1.6;
-                    canJump = true; // 落地後恢復跳躍能力
+                    canJump = true; 
                 }
 
                 if ((velocity.x !== 0 || velocity.y !== 0 || velocity.z !== 0) && isFirebaseReady) {
@@ -251,6 +276,7 @@
                 }
             }
 
+            // 右鍵平滑瞄準動畫
             if (gun) {
                 const targetPos = isAiming ? aimPosition : hipPosition;
                 gun.position.lerp(targetPos, 0.15);
@@ -264,6 +290,9 @@
             renderer.render(scene, camera);
         }
 
+        // ==========================================
+        // 5. 資料庫監聽
+        // ==========================================
         function listenToPlayers() {
             db.ref('players').on('value', (snapshot) => {
                 const playersData = snapshot.val() || {};
